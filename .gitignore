@@ -1,0 +1,34 @@
+node_modules/
+dist/
+.DS_Store
+*.tsbuildinfo
+.qa/
+
+# 本地运行、验证和部署工具产物
+.vercel/
+coverage/
+playwright-report/
+test-results/
+exports/
+*.log
+
+# 用户导出的文档不进入源码仓库；测试夹具需经过脱敏审核
+*.docx
+*.dotx
+!tests/fixtures/**/*.docx
+!tests/fixtures/**/*.dotx
+
+# 本地配置和凭据；示例环境文件只能包含占位值
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local planning and review drafts
+PLAN.md
+docs/readme-candidate-*.md
+docs/readme-review.md
+docs/guide-audit.md

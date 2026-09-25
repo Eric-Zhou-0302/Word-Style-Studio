@@ -1,0 +1,7 @@
+import {createStyle, createList, borderDefault, type Style, type Project} from '../src/model';
+export function createLegacyProject(): Project {
+  const normal:Style={...createStyle('paragraph','正文'),id:'Normal',priority:0,run:{font:'宋体',latinFont:'Times New Roman',size:12,color:'#202625'},paragraph:{alignment:'both',lineRule:'auto',line:1.5,after:6,widowControl:true},next:'Normal'};
+  const headings=[1,2,3].map((n):Style=>({...createStyle('linked',`${['一','二','三'][n-1]}级标题`,'Normal'),id:`Heading${n}`,priority:n,run:{font:'黑体',latinFont:'Arial',size:[20,16,14][n-1],bold:true,color:n===1?'#155b49':'#202625'},paragraph:{alignment:'left',before:[20,16,12][n-1],after:8,lineRule:'auto',line:1.25,keepNext:true,keepLines:true,outlineLevel:n-1}}));
+  const list=createList('标题层级'); list.id='Headings'; list.levels.forEach((l,i)=>{if(i<3)l.linkedStyle=`Heading${i+1}`;l.indent=i*0.55;l.hanging=0;l.tabPosition=i*0.55+0.7;l.follow='space';});
+  return {version:1,name:'我的 Word 样式方案',page:{size:'A4',orientation:'portrait',top:2.54,bottom:2.54,left:2.54,right:2.54,gutter:0,defaultTab:1.27},styles:[normal,...headings,{...createStyle('paragraph','引用','Normal'),run:{italic:true,color:'#63736d'},paragraph:{left:0.85,right:0.85,before:12,after:12,borders:{left:{...borderDefault,color:'#155b49',width:2,space:8}}}},{...createStyle('character','强调'),run:{bold:true,color:'#155b49'}},{...createStyle('table','简洁表格'),priority:30}],lists:[list]};
+}
