@@ -45,4 +45,4 @@
 ### 已知边界
 
 - 网页预览不模拟完整 Word 排版；外部文档导入不保留正文、宏和所有未知属性，不承诺无损往返。
-- 完整 Microsoft Word 保存重开、列表库及跨客户端验收仍未完成，当前验证记录与其他功能缺口见 [README.md](README.md) 和 [PLAN.md](PLAN.md)。
+- 完整 Microsoft Word 保存重开、列表库及跨客户端验收仍未完成，使用边界见 [README.md](README.md)。
