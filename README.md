@@ -1,5 +1,7 @@
 <div align="center">
 
+**简体中文** &nbsp; / &nbsp; [English](README.en.md)
+
 <img src="public/favicon.svg" width="72" height="72" alt="字序 Logo" />
 
 # 字序
