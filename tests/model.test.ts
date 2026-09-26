@@ -1,7 +1,7 @@
 import {createLegacyProject as createProject} from './legacy-fixture';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { bindStyle, borderDefault, canBaseOn, createList, createStyle, numberFormats, removeStyle, resolveStyle, validateProject } from '../src/model';
+import { bindStyle, borderDefault, canBaseOn, createBlankProject, createList, createStyle, numberFormats, removeStyle, resolveStyle, validateProject } from '../src/model';
 import type { Level, Project, Style, TabStop } from '../src/model';
 import { formatNumber, levelLabel, simulateList } from '../src/numbering';
 
@@ -76,8 +76,49 @@ test('deleting a style repairs inheritance, next paragraph, and numbering refere
   assert.doesNotThrow(()=>validateProject(result));
   assert.ok(project.styles.some(s=>s.id===parent.id));
   assert.equal(project.lists[0].levels[4].linkedStyle,parent.id);
-  assert.equal(removeStyle(project,'Normal'),project);
   assert.equal(removeStyle(project,'Missing'),project);
+});
+
+test('deleting Normal clears inherited bases and makes each following paragraph use its own style', () => {
+  const project=createProject();
+  const first=addStyle(project,'First'), second=addStyle(project,'Second');
+  const child=addStyle(project,'Child',first.id);
+  child.next=second.id;
+  const before=structuredClone(project);
+  const result=validateProject(removeStyle(project,'Normal'));
+  assert.equal(result.styles.some(style=>style.id==='Normal'),false);
+  for(const id of [first.id,second.id]){
+    const style=result.styles.find(style=>style.id===id)!;
+    assert.equal(style.basedOn,undefined);
+    assert.equal(style.next,id);
+  }
+  assert.equal(result.styles.some(style=>style.basedOn==='Normal'||style.next==='Normal'),false);
+  assert.equal(result.styles.find(style=>style.id===child.id)!.basedOn,first.id);
+  assert.equal(result.styles.find(style=>style.id===child.id)!.next,second.id);
+  assert.deepEqual(project,before);
+});
+
+test('deleting Normal clears imported following-paragraph references on character and table styles', () => {
+  const project=createBlankProject();
+  project.styles.push(
+    {...createStyle('character','导入字符样式'),id:'ImportedCharacter',next:'Normal'},
+    {...createStyle('table','导入表格样式'),id:'ImportedTable',next:'Normal'},
+  );
+  assert.doesNotThrow(()=>validateProject(project));
+  const result=removeStyle(project,'Normal');
+  assert.deepEqual(result.styles.map(style=>style.id),['ImportedCharacter','ImportedTable']);
+  for(const style of result.styles)assert.equal(style.next,undefined);
+  assert.doesNotThrow(()=>validateProject(result));
+  assert.equal(project.styles[1].next,'Normal');
+  assert.equal(project.styles[2].next,'Normal');
+});
+
+test('the sole Normal cannot be deleted and empty style projects remain invalid', () => {
+  const project=createBlankProject();
+  const result=removeStyle(project,'Normal');
+  assert.equal(result,project);
+  assert.deepEqual(result.styles.map(style=>style.id),['Normal']);
+  assert.throws(()=>validateProject({...project,styles:[]}),/styles/);
 });
 
 test('validation accounts for IDs created for linked character companions and numbering styles', () => {
@@ -103,7 +144,7 @@ test('duplicate IDs, whitespace names and invalid next styles are rejected', () 
   assert.throws(()=>validateProject(project),/方案名称不能为空/);
 });
 
-test('Normal must stay an unnumbered independent paragraph style', () => {
+test('Normal, when present, must stay an unnumbered independent paragraph style', () => {
   const project=createProject();
   project.styles[0].basedOn='Heading1';
   assert.throws(()=>validateProject(project),/无继承/);
@@ -231,14 +272,16 @@ test('deleting a missing style leaves a single-style project unchanged', () => {
   assert.equal(removeStyle(project,'MissingStyle'),project);
 });
 
-test('deleting the final custom style restores an unnumbered Normal and clears its list binding', () => {
+test('the final custom style cannot be deleted and keeps its list binding unchanged', () => {
   const project=createProject();
   project.styles=[{...createStyle('paragraph','唯一自定义样式'),id:'OnlyStyle',next:'OnlyStyle'}];
   project.lists=[createList('保留的列表')];
   project.lists[0].levels[0].linkedStyle='OnlyStyle';
-  const result=validateProject(removeStyle(project,'OnlyStyle'));
-  assert.deepEqual(result.styles.map(style=>style.id),['Normal']);
-  assert.equal(result.lists[0].levels[0].linkedStyle,undefined);
-  assert.equal(project.styles[0].id,'OnlyStyle');
-  assert.equal(project.lists[0].levels[0].linkedStyle,'OnlyStyle');
+  const before=structuredClone(project);
+  const result=removeStyle(project,'OnlyStyle');
+  assert.equal(result,project);
+  assert.deepEqual(result,before);
+  assert.equal(result.styles[0].id,'OnlyStyle');
+  assert.equal(result.lists[0].levels[0].linkedStyle,'OnlyStyle');
+  assert.doesNotThrow(()=>validateProject(result));
 });

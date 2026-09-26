@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { strFromU8, unzipSync } from 'fflate';
 import { buildParts, exportDocument } from '../src/export';
-import { createList, createStyle, tableDefault } from '../src/model';
+import { createBlankProject, createList, createStyle, removeStyle, tableDefault } from '../src/model';
 import type { Project } from '../src/model';
 
 const xml = (parts: ReturnType<typeof buildParts>, name: string) => {
@@ -36,6 +36,37 @@ test('DOTX main content type is a template rather than a renamed document', () =
   const project = createProject();
   assert.match(xml(buildParts(project), '[Content_Types].xml'), /wordprocessingml.document.main\+xml/);
   assert.match(xml(buildParts(project, { format: 'dotx' }), '[Content_Types].xml'), /wordprocessingml.template.main\+xml/);
+});
+
+test('deleting Normal still exports blank DOCX and DOTX and round-trips the remaining custom style', async () => {
+  const {importWord}=await import('../src/import');
+  for(const format of ['docx','dotx'] as const){
+    for(const keepList of [false,true]){
+      const input=createBlankProject();
+      input.styles.push({...createStyle('paragraph','自定义正文','Normal'),id:'CustomBody'});
+      input.lists=keepList?[createList('保留的列表')]:[];
+      if(keepList)input.lists[0].levels[0].linkedStyle='CustomBody';
+      const project=removeStyle(input,'Normal');
+      assert.deepEqual(project.styles.map(style=>style.id),['CustomBody']);
+      const before=structuredClone(project);
+      const bytes=exportDocument(project,{format});
+      const files=unzipSync(bytes);
+      const document=strFromU8(files['word/document.xml']);
+      const styles=strFromU8(files['word/styles.xml']);
+      assert.match(styles,/<w:style w:type="paragraph" w:default="1" w:styleId="Normal">/);
+      assert.match(styleXml(styles,'Normal'),/<w:semiHidden\/>/);
+      assert.doesNotMatch(styleXml(styles,'Normal'),/<w:(qFormat|numPr)\b/);
+      assert.match(styleXml(styles,'CustomBody'),/<w:next w:val="CustomBody"\/>/);
+      assert.doesNotMatch(styleXml(styles,'CustomBody'),/<w:basedOn w:val="Normal"/);
+      assert.match(document,/<w:body><w:p><w:pPr><w:pStyle w:val="Normal"\/><\/w:pPr><\/w:p><w:sectPr>/);
+      assert.equal((document.match(/<w:p>/g)??[]).length,1);
+      assert.doesNotMatch(document,/<w:(t|numPr)\b/);
+      assert.match(strFromU8(files['[Content_Types].xml']),format==='dotx'?/wordprocessingml.template.main\+xml/:/wordprocessingml.document.main\+xml/);
+      assert.deepEqual(JSON.parse(strFromU8(files['word/style-studio.json'])),JSON.parse(JSON.stringify(project)));
+      assert.deepEqual(importWord(bytes).project,JSON.parse(JSON.stringify(project)));
+      assert.deepEqual(project,before);
+    }
+  }
 });
 
 test('linked styles have reciprocal links and compatible character ancestry', () => {

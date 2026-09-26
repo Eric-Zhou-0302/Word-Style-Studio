@@ -196,7 +196,7 @@ export function validateProject(input:unknown): Project {
   const p=result.data; const ids=new Set<string>();const names=new Set<string>();
   if(!p.name.trim())throw new Error('方案名称不能为空');
   for(const s of p.styles){if(ids.has(s.id)||names.has(s.name.trim()))throw new Error('样式的名称和标识必须唯一');ids.add(s.id);names.add(s.name.trim());if(!s.name.trim())throw new Error('样式名称不能为空');if(s.name.includes(','))throw new Error('样式名称不能包含英文逗号，请在别名中使用逗号分隔');}
-  if(p.styles.some(s=>s.id==='Normal'&&(s.type!=='paragraph'||!!s.basedOn)))throw new Error('方案必须保留无继承的正文（Normal）样式');
+  if(p.styles.some(s=>s.id==='Normal'&&(s.type!=='paragraph'||!!s.basedOn)))throw new Error('正文（Normal）必须是无继承的段落样式');
   // 链接样式导出的字符副本也使用独立 ID，提前检查防止冲突。
   const exportedIds=new Set([...ids,'Normal']);
   for(const s of p.styles){if(s.type==='linked'){const companion=`${s.id}Char`;if(exportedIds.has(companion))throw new Error('样式标识与链接字符样式冲突');exportedIds.add(companion);}if(s.basedOn){const base=p.styles.find(x=>x.id===s.basedOn);if(!base||!canBaseOn(p,s,base))throw new Error('样式继承存在循环、类型不兼容或目标缺失');}if(s.next&&!p.styles.some(x=>x.id===s.next&&paragraphStyle(x)))throw new Error('后续段落样式不存在');}
@@ -214,9 +214,9 @@ export function bindStyle(project:Project,listId:string,index:number,styleId?:st
   return {...project,lists:project.lists.map(list=>({...list,levels:list.levels.map((level,i)=>({...level,linkedStyle:list.id===listId&&i===index?styleId:styleId&&level.linkedStyle===styleId?undefined:level.linkedStyle}))}))};
 }
 export function removeStyle(project:Project,id:string):Project {
-  if(id==='Normal')return project;
+  if(project.styles.length===1)return project;
   const removed=project.styles.find(s=>s.id===id);
   if(!removed)return project;
-  if(project.styles.length===1)return {...project,styles:createBlankProject().styles,lists:project.lists.map(l=>({...l,levels:l.levels.map(v=>({...v,linkedStyle:v.linkedStyle===id?undefined:v.linkedStyle}))}))};
-  return {...project,styles:project.styles.filter(s=>s.id!==id).map(s=>({...s,basedOn:s.basedOn===id?removed?.basedOn:s.basedOn,next:s.next===id?(project.styles.some(v=>v.id==='Normal')?'Normal':s.id):s.next})),lists:project.lists.map(l=>({...l,levels:l.levels.map(v=>({...v,linkedStyle:v.linkedStyle===id?undefined:v.linkedStyle}))}))};
+  const remaining=project.styles.filter(s=>s.id!==id);
+  return {...project,styles:remaining.map(s=>({...s,basedOn:s.basedOn===id?removed.basedOn:s.basedOn,next:s.next===id?(paragraphStyle(s)?(remaining.some(v=>v.id==='Normal')?'Normal':s.id):undefined):s.next})),lists:project.lists.map(l=>({...l,levels:l.levels.map(v=>({...v,linkedStyle:v.linkedStyle===id?undefined:v.linkedStyle}))}))};
 }

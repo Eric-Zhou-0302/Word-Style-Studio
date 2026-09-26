@@ -128,7 +128,7 @@ export const diagnosticMessages: Record<string, string> = {
   "样式的名称和标识必须唯一": "Style names and identifiers must be unique",
   "样式名称不能为空": "Style name cannot be empty",
   "样式名称不能包含英文逗号，请在别名中使用逗号分隔": "Style names cannot contain ASCII commas. Use commas in aliases instead.",
-  "方案必须保留无继承的正文（Normal）样式": "The project must keep a Normal paragraph style with no base style",
+  "正文（Normal）必须是无继承的段落样式": "Normal must be a paragraph style with no base style",
   "样式标识与链接字符样式冲突": "A style identifier conflicts with a linked character style",
   "样式继承存在循环、类型不兼容或目标缺失": "Style inheritance is cyclic, incompatible or points to a missing style",
   "后续段落样式不存在": "The following-paragraph style does not exist",

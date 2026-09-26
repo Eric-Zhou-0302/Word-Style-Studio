@@ -79,7 +79,7 @@ export const uiMessages: Record<string, string> = {
   "选择一个样式": "Select a style",
   "复制样式": "Duplicate style",
   "复制列表": "Duplicate list",
-  "正文是基础样式，无法删除": "Normal is the base style and cannot be deleted",
+  "最后一个样式无法删除": "The last style cannot be deleted",
   "删除样式": "Delete style",
   "删除列表": "Delete list",
   "从左侧选择或新建一个样式": "Select or create a style in the sidebar",

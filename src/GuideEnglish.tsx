@@ -48,10 +48,11 @@ export default function GuideEnglish() {
  ['Use report example (project menu)', 'Replaces the current project with 29 report styles, 3 list definitions, and example page settings'],
  ['Create blank project (project menu)', 'Replaces it with an untitled project containing only Normal and no lists. Base fonts: SimSun 12 pt and Times New Roman for Latin text; 1.5-line spacing; A4 portrait; 2.54 cm margins; header/footer distances of 1.27 cm'],
  ['Clear styles and lists (sidebar trash icon)', 'Removes all styles except Normal and all lists, keeping body formatting, the project name, and page settings. Creates a basic Normal style if absent and sets its following paragraph style to itself'],
- ['Delete selected item (editor, top right)', 'Removes only that style or list and adjusts references. Normal cannot be deleted'],
+ ['Delete selected item (editor, top right)', 'Removes only that style or list and adjusts inheritance, following-paragraph styles, and list references. Normal can also be deleted'],
  ['Apply imported project', 'Replaces the current project after showing an import report; it does not merge projects'],
  ]}/>
  <p>Replacements and deletions can be undone within the current session’s history, which retains up to 80 edits. Clearing, creating a new project, and deleting an item require confirmation. Opening this guide preserves your editing state; choose “Back to workspace” to continue.</p>
+ <p>A project must keep at least one style, so the last style cannot be deleted. If Normal is absent, export adds a default paragraph style.</p>
  <p>If the status says “Recovery needed,” previously saved data could not be read or validated. The app temporarily loads the default example and pauses automatic saving to preserve the original data. Choose “Download recovery file and continue,” then check that the browser saved the file. Automatic saving of the current project resumes afterward. The recovery file preserves raw data; it may need repair before it can be imported again.</p>
  </Section>
  <Section id="styles" title="04 · Create and manage styles">
