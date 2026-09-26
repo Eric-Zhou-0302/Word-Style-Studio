@@ -18,10 +18,9 @@ exports/
 !tests/fixtures/**/*.docx
 !tests/fixtures/**/*.dotx
 
-# 本地配置和凭据；示例环境文件只能包含占位值
+# 本地配置和凭据
 .env
 .env.*
-!.env.example
 *.pem
 *.key
 *.p12
