@@ -15,7 +15,7 @@ and make thoughtful formatting the starting point for your next document.
 
 **Local processing** &nbsp; · &nbsp; **No account required** &nbsp; · &nbsp; **Native Word styles**
 
-[Get started](#get-started) &nbsp; / &nbsp; [Download](https://github.com/Eric-Zhou-0302/Word-Style-Studio/releases/latest) &nbsp; / &nbsp; [Share feedback](https://github.com/Eric-Zhou-0302/Word-Style-Studio/issues)
+[Use online](https://docxstyle.com/) &nbsp; / &nbsp; [Get started](#get-started) &nbsp; / &nbsp; [Download](https://github.com/Eric-Zhou-0302/Word-Style-Studio/releases/latest) &nbsp; / &nbsp; [Share feedback](https://github.com/Eric-Zhou-0302/Word-Style-Studio/issues)
 
 <br />
 
@@ -38,6 +38,8 @@ Report titles, paragraph indents, figure captions, multilevel numbering — stop
 | Set borders, shading, cell text, and formatting for regions such as header rows, last rows, and alternating bands. | Configure page size and margins, export DOCX or DOTX files, and back up your complete configuration as JSON. |
 
 ## Get started
+
+Open **[docxstyle.com](https://docxstyle.com/)** to use Word Style Studio in your browser. No installation or account is required.
 
 The app interface and built-in user guide are currently in Chinese. Chinese labels are included below to help you find the relevant controls.
 
