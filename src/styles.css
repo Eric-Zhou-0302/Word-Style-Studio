@@ -63,3 +63,25 @@
 
 /* 手机中为编号参考值与操作保留完整行宽，避免字体和色值被挤碎。 */
 @media(max-width:600px){.numbering-font-section .field-grid{grid-template-columns:1fr}.numbering-font-section .span-2{grid-column:auto}}
+
+/* 语言偏好独立于方案，长英文标签允许自然换行。 */
+.language-switcher{display:inline-flex;align-items:center;flex-shrink:0;gap:2px;border:1px solid var(--line);border-radius:7px;padding:3px;background:#fff;font-size:11px;line-height:1.2}
+.language-switcher button{padding:6px 8px;border-radius:4px;white-space:nowrap;color:#708277}
+.language-switcher button[aria-pressed=true]{color:var(--green);background:#eaf2ec;font-weight:600}
+.language-switcher button:focus-visible{outline:2px solid #419980;outline-offset:1px}
+:lang(en) .brand strong{letter-spacing:-.3px;font-size:17px}
+:lang(en) .brand small{letter-spacing:.2px}
+:lang(en) .app-header{gap:16px}
+:lang(en) .field-heading{align-items:flex-start;line-height:1.5}
+:lang(en) .inherit-label{flex-shrink:0;max-width:76px;text-align:right}
+:lang(en) .number-input input{padding-right:65px}
+:lang(en) .preview-tabs{flex-wrap:wrap}
+:lang(en) .report-preview-scenes{flex-wrap:wrap}
+:lang(en) .readonly-input{height:auto;min-height:38px}
+:lang(en) .numbering-font-section summary{flex-wrap:wrap}
+:lang(en) .numbering-font-status{flex-wrap:wrap}
+:lang(en) .panel-rail span{writing-mode:vertical-rl;letter-spacing:1px}
+@media(min-width:601px) and (max-width:1250px){:lang(en) .app-header .brand small{display:none}:lang(en) .app-header .brand strong{font-size:15px;max-width:110px;display:block}:lang(en) .app-header .header-actions{gap:7px}:lang(en) .app-header .project-title span{max-width:150px}}
+@media(max-width:600px){.header-actions .language-switcher{margin-right:auto}.header-actions .history-buttons{margin-right:0}:lang(en) .project-title{max-width:calc(100% - 220px)}:lang(en) .brand strong{font-size:16px}:lang(en) .header-actions{gap:5px}.header-actions .language-switcher button{padding:6px}.header-actions .history-buttons .icon-button{width:28px}:lang(en) .field-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}:lang(en) .table-look-options{grid-template-columns:repeat(2,minmax(0,1fr))}:lang(en) .preview-footer{flex-wrap:wrap}:lang(en) .mobile-navigation button{padding:7px 17px}:lang(en) .modal-footer{flex-wrap:wrap}}
+@media(max-width:600px){.header-actions{flex-wrap:wrap;justify-content:space-between}.header-actions .button{padding:0 10px;font-size:11px}.header-actions .button svg{width:14px}.header-actions .language-switcher{font-size:10px}.header-actions .language-switcher button{padding:6px 5px}.header-actions .history-buttons .icon-button{width:25px}}
+:lang(en) .field-grid .field-heading{min-height:36px}

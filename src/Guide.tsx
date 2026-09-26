@@ -1,20 +1,19 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, BookOpen, ArrowUpRight } from 'lucide-react';
 import './guide.css';
+import { LanguageSwitcher, useI18n } from './i18n';
+import { Section, Table } from './GuideParts';
+import GuideEnglish from './GuideEnglish';
 
 const chapters = [
- ['start','快速上手'],['concepts','先理解几个概念'],['workspace','认识工作区与方案'],['styles','建立与管理样式'],
- ['format','字体、段落与边框'],['tables','表格样式'],['lists','项目符号与编号'],['multilevel','多级列表与样式关联'],
- ['preview','页面设置与实时预览'],['import','导入已有文件'],['export','导出与在 Word 中使用'],
- ['example','实战：建立报告模板'],['faq','常见问题与功能边界'],
+ ['start','快速上手','Get started'],['concepts','先理解几个概念','Understand the essentials'],['workspace','认识工作区与方案','Workspace and projects'],['styles','建立与管理样式','Create and manage styles'],
+ ['format','字体、段落与边框','Fonts, paragraphs, and borders'],['tables','表格样式','Table styles'],['lists','项目符号与编号','Bullets and numbered lists'],['multilevel','多级列表与样式关联','Multilevel lists and style links'],
+ ['preview','页面设置与实时预览','Page settings and live preview'],['import','导入已有文件','Import existing files'],['export','导出与在 Word 中使用','Export and use files in Word'],
+ ['example','实战：建立报告模板','Build a report template'],['faq','常见问题与功能边界','Questions and limitations'],
 ] as const;
-function Section({id,title,children}:{id:string;title:string;children:ReactNode}){
- return <section id={'guide-'+id} className="guide-section" tabIndex={-1}><h2><a href={'#guide-'+id}>{title}</a></h2>{children}</section>;
-}
-function Table({heads,rows}:{heads:string[];rows:string[][]}){
- return <div className="guide-table-wrap" tabIndex={0} role="region" aria-label={heads.join('与')}><table><thead><tr>{heads.map(h=><th scope="col" key={h}>{h}</th>)}</tr></thead><tbody>{rows.map((r,i)=><tr key={i}>{r.map((v,j)=><td key={j}>{v}</td>)}</tr>)}</tbody></table></div>;
-}
 export default function Guide({hash}:{hash:string}){
+ const { locale, t } = useI18n();
+ const previousLocale = useRef(locale);
  const [activeChapter,setActiveChapter]=useState('');
  useEffect(()=>{
   const sections=chapters.map(([id])=>document.getElementById('guide-'+id)).filter((node):node is HTMLElement=>!!node);
@@ -33,13 +32,20 @@ export default function Guide({hash}:{hash:string}){
   window.addEventListener('resize',schedule);
   schedule();
   return()=>{window.removeEventListener('scroll',schedule);window.removeEventListener('resize',schedule);cancelAnimationFrame(frame);};
- },[]);
+ },[locale]);
 
  useEffect(()=>{const target=document.getElementById(hash.slice(1));if(target){target.scrollIntoView({block:'start'});target.focus({preventScroll:true});}else window.scrollTo(0,0);},[hash]);
- return <div className="guide-page">
- <header className="guide-header"><a className="guide-brand" href="#"><img className="brand-mark" src="/favicon.svg?v=2" alt="" width="42" height="42"/><strong>字序 <small>使用文档</small></strong></a><a className="button secondary" href="#workspace"><ArrowLeft size={16}/>返回工作区</a></header>
- <div className="guide-layout"><aside className="guide-nav"><div className="guide-nav-title"><BookOpen size={16}/>使用指南</div><nav aria-label="使用文档目录">{chapters.map(([id,title],i)=><a key={id} href={'#guide-'+id} aria-current={activeChapter==='guide-'+id?'location':undefined}><span>{String(i+1).padStart(2,'0')}</span>{title}</a>)}</nav><p>从一套格式规则，<br/>到下一份 Word 文档。</p></aside>
- <main className="guide-content"><div className="guide-hero"><span className="eyebrow">字序 · WORD 样式工作室</span><h1>把格式设好，<br/>让写作更专注。</h1><p>这里管理的是 Word 文档的样式、列表和页面规则。先在网页中定义格式，再导出带有这些规则的空白文档或模板，正文写作在 Word 中完成。</p><div className="guide-hero-links"><a href="#guide-start">第一次使用，从这里开始 <ArrowUpRight size={16}/></a><a href="#guide-example">跟着建立一份报告模板 →</a></div></div>
+ useEffect(()=>{
+  if(previousLocale.current===locale)return;
+  previousLocale.current=locale;
+  // 翻译改变章节高度，切换后保持当前阅读章节，而不是跳回旧 hash。
+  if(activeChapter)document.getElementById(activeChapter)?.scrollIntoView({block:'start'});
+ },[locale,activeChapter]);
+ return <div className="guide-page" lang={locale==='en'?'en':'zh-CN'}>
+ <header className="guide-header"><a className="guide-brand" href="#"><img className="brand-mark" src="/favicon.svg?v=2" alt="" width="42" height="42"/><strong>{t('字序','Word Style Studio')} <small>{t('使用文档','User guide')}</small></strong></a><div className="guide-header-actions"><LanguageSwitcher/><a className="button secondary" href="#workspace"><ArrowLeft size={16}/>{t('返回工作区','Back to workspace')}</a></div></header>
+ <div className="guide-layout"><aside className="guide-nav"><div className="guide-nav-title"><BookOpen size={16}/>{t('使用指南','User guide')}</div><nav aria-label={t('使用文档目录','User guide contents')}>{chapters.map(([id,zh,en],i)=><a key={id} href={'#guide-'+id} aria-current={activeChapter==='guide-'+id?'location':undefined}><span>{String(i+1).padStart(2,'0')}</span>{t(zh,en)}</a>)}</nav><p>{t('从一套格式规则，','From a set of formatting rules')}<br/>{t('到下一份 Word 文档。','to your next Word document.')}</p></aside>
+ <main className="guide-content"><div className="guide-hero"><span className="eyebrow">{t('字序 · WORD 样式工作室','WORD STYLE STUDIO · USER GUIDE')}</span><h1>{t('把格式设好，','Set your styles.')}<br/>{t('让写作更专注。','Focus on your writing.')}</h1><p>{t('这里管理的是 Word 文档的样式、列表和页面规则。先在网页中定义格式，再导出带有这些规则的空白文档或模板，正文写作在 Word 中完成。','Create Word styles, lists, and page settings in your browser. Export a blank document or template with those rules built in, then write your content in Word.')}</p><div className="guide-hero-links"><a href="#guide-start">{t('第一次使用，从这里开始','New here? Start with the basics')} <ArrowUpRight size={16}/></a><a href="#guide-example">{t('跟着建立一份报告模板 →','Build a report template, step by step →')}</a></div></div>
+ {locale==='en'?<GuideEnglish/>:<>
  <Section id="start" title="01 · 快速上手">
  <ol><li><strong>进入工作区，选择起点。</strong>首页可继续编辑已有方案，或从示例、空白开始。示例方案中选择“报告正文”调整字体和段落，各专用样式相互独立；空白方案从“正文”（Normal）开始。</li>
  <li><strong>再调标题。</strong>选择“一级标题”“二级标题”等，分别设置字号、段前段后间距和分页规则。也可以点击左侧“新建样式”。</li>
@@ -47,6 +53,7 @@ export default function Guide({hash}:{hash:string}){
  <li><strong>看预览并导出示例。</strong>右侧可切换整体效果、当前样式或列表、编号测试。首次使用建议在“导出 Word”中开启“包含样式示例”，打开文件检查实际效果。</li>
  <li><strong>导出正式文件。</strong>检查完成后关闭“包含样式示例”，选择 DOCX 或 DOTX，获得带样式和列表定义的空白文件。</li></ol>
  <p className="guide-callout">想从零开始？点击顶部方案名称，在方案管理中选择“从空白新建”。如果只想删除当前样式和列表、保留正文格式及页面设置，可用左侧栏顶部的“清空样式与列表”。</p>
+ <p>页面顶部可切换简体中文与 English，首页、工作区与使用文档共用语言选择，当前浏览器会记住设置。切换语言不会翻译或改动方案名称、样式名称、列表名称及其他方案内容；内置示例仍保留原有中文报告格式。</p>
  </Section>
  <Section id="concepts" title="02 · 先理解几个概念">
  <h3>样式：给一组格式起一个名字</h3><p>例如“报告正文”代表宋体、12 pt、1.5 倍行距；“一级标题”代表黑体、20 pt、段前留白。使用样式后，同类内容可以统一调整，不必逐段改字体。单独给选中文字加粗、改颜色属于“直接格式”，它可能覆盖样式效果。有关 Word 自身的操作，见<a href="https://support.microsoft.com/en-us/word/customize-or-create-new-styles" target="_blank" rel="noreferrer">微软的样式说明</a>。</p>
@@ -160,8 +167,8 @@ export default function Guide({hash}:{hash:string}){
  <p>若快速样式栏未显示某个样式，先到 Word 的样式窗格查找，检查本站的“加入快速样式”“隐藏样式”和 Word 的样式显示/排序设置。列表编号仍应通过样式或列表应用，不要手工输入序号覆盖它。</p>
  </Section>
  <Section id="example" title="12 · 实战：建立一份三级报告模板">
- <p>目标：正文统一排版，标题按 1、1.1、1.1.1 自动编号，第一章和第二章的下级编号分别从 1 开始。</p>
- <ol><li><strong>正文：</strong>选择“正文”，设中文宋体、西文 Times New Roman、12 pt，在段落中设 1.5 倍行距。</li><li><strong>标题格式：</strong>依次选默认一、二、三级标题，设黑体和递减字号，例如 20 / 16 / 14 pt；按需要调整段前段后间距，启用“与下段同页”。这些数值只是示例，可按自己的规范修改。</li><li><strong>结构：</strong>在三个标题的“段落”中分别确认大纲级别为 1 / 2 / 3 级；后续段落样式设为正文。</li><li><strong>列表：</strong>选择“标题层级”，前三层均选阿拉伯数字，格式文本依次为 <code>%1</code>、<code>%1.%2</code>、<code>%1.%2.%3</code>，起始值均为 1。</li><li><strong>关联与重启：</strong>第一级链接一级标题，第二级链接二级标题并在第一级出现后重启，第三级链接三级标题并在第二级出现后重启。若使用默认方案，这些关联通常已存在，核对即可。</li><li><strong>检查：</strong>切换到“编号测试”，观察 1 → 1.1 → 1.1.1，以及下一个章节的 2 → 2.1 → 2.1.1。若不一致，逐层检查编号格式和重启条件。</li><li><strong>交付：</strong>导出带样式示例的 DOCX 检查字体、对齐和编号；满意后导出空白 DOTX，并另外保存一份 JSON。</li></ol>
+ <p>从默认报告示例开始。目标：正文统一排版，标题按 1、1.1、1.1.1 自动编号，第一章和第二章的下级编号分别从 1 开始。</p>
+ <ol><li><strong>正文：</strong>选择“报告正文”，设中文宋体、西文 Times New Roman、12 pt，在段落中设 1.5 倍行距。</li><li><strong>标题格式：</strong>依次选默认一、二、三级标题，设黑体和递减字号，例如 20 / 16 / 14 pt；按需要调整段前段后间距，启用“与下段同页”。这些数值只是示例，可按自己的规范修改。</li><li><strong>结构：</strong>在三个标题的“段落”中分别确认大纲级别为 1 / 2 / 3 级；后续段落样式设为“报告正文”。</li><li><strong>列表：</strong>选择“标题层级”，前三层均选阿拉伯数字，格式文本依次为 <code>%1</code>、<code>%1.%2</code>、<code>%1.%2.%3</code>，起始值均为 1。</li><li><strong>关联与重启：</strong>第一级链接一级标题，第二级链接二级标题并在第一级出现后重启，第三级链接三级标题并在第二级出现后重启。若使用默认方案，这些关联通常已存在，核对即可。</li><li><strong>检查：</strong>切换到“编号测试”，观察 1 → 1.1 → 1.1.1，以及下一个章节的 2 → 2.1 → 2.1.1。若不一致，逐层检查编号格式和重启条件。</li><li><strong>交付：</strong>导出带样式示例的 DOCX 检查字体、对齐和编号；满意后导出空白 DOTX，并另外保存一份 JSON。</li></ol>
  <p>报告中的普通条目应另建“项目正文”或“步骤正文”段落样式，绑定独立项目符号或编号列表，避免占用标题层级的关联。</p>
  </Section>
  <Section id="faq" title="13 · 常见问题与功能边界">
@@ -174,6 +181,7 @@ export default function Guide({hash}:{hash:string}){
  <h3>文件会上传吗？可以多人协作吗？</h3><p>导入解析、编辑、导出都在浏览器本地处理，目前没有账号、云同步或多人协作。打开本页的微软参考链接会访问外部网站，但不会自动上传方案文件。</p>
  <h3>目前覆盖到哪里？</h3><p>已覆盖四类样式、继承与快速样式、字体和段落、边框制表位、表格条件区域、三类列表、样式关联、页面设置及导入导出。每个方案最多 200 个样式、30 套列表，多级列表每套九级。</p><p>尚未完整覆盖 Word 全部能力，例如全局快捷键、格式限制和样式锁定、主题字体动态切换、全部语言编号和装饰边框、文档网格尺寸编辑、外部图片项目符号导入。网页不编辑正文、不生成目录正文，也不保证不同 Word/WPS 版本显示完全一致。外部文件导入有损，重要文件请保留原件。</p>
  </Section>
- <footer className="guide-footer"><p>本文对应当前网站功能。Word 基础概念附有微软支持文档，具体菜单以所用版本为准。</p><a href="#workspace">返回工作区，开始设置 <ArrowUpRight size={16}/></a><a href="#guide">回到文档顶部 ↑</a></footer>
+ </>}
+ <footer className="guide-footer"><p>{t('本文对应当前网站功能。Word 基础概念附有微软支持文档，具体菜单以所用版本为准。','This guide describes the current app. Microsoft Support links explain Word concepts; exact menus depend on your version.')}</p><a href="#workspace">{t('返回工作区，开始设置','Back to workspace to set up your styles')} <ArrowUpRight size={16}/></a><a href="#guide">{t('回到文档顶部 ↑','Back to the top ↑')}</a></footer>
  </main></div></div>;
 }
