@@ -1,5 +1,6 @@
 import { Inflate, strFromU8 } from 'fflate';
 import { createProject, createStyle, createList, validateProject, canBaseOn, paragraphStyle, numberFormats, regionNames, runSchema, paragraphSchema, borderSchema, tableDefault, type Project, type Style, type Run, type Paragraph, type Border, type Borders, type Table, type Level } from './model';
+import type { Locale } from './i18n';
 
 const MAX_INPUT = 10 * 1024 * 1024;
 const MAX_EXPANDED = 40 * 1024 * 1024;
@@ -296,7 +297,8 @@ function uniqueName(raw: string, names: Set<string>, fallback: string): string {
   while (names.has(name)) { const suffix = ` (${n++})`; name = base.slice(0,255-suffix.length)+suffix; }
   names.add(name); return name;
 }
-function importedProject(files: Map<string, Uint8Array>, fileName: string): ImportResult {
+function importedProject(files: Map<string, Uint8Array>, fileName: string, locale: Locale): ImportResult {
+  const en = locale === 'en';
   const reader = new WordReader();
   const types = parseXml(files.get('[Content_Types].xml'),'内容类型');
   if (!types || !files.has('word/document.xml')) throw new Error('压缩包不是受支持的 Word 文档（缺少主文档）');
@@ -326,11 +328,11 @@ function importedProject(files: Map<string, Uint8Array>, fileName: string): Impo
   }
   const used = new Set<string>(['Normal']), names = new Set<string>(), idMap = new Map<string,string>();
   const sourceMap = new Map<string,Element>();
-  const project = createProject(); project.name = cleanText(fileName.replace(/\.(docx|dotx)$/i,'')) || '导入的 Word 样式'; project.styles = []; project.lists = [];project.page={size:'A4',orientation:'portrait',top:2.54,bottom:2.54,left:2.54,right:2.54,gutter:0,defaultTab:1.27,header:1.27,footer:1.27};
+  const project = createProject(locale); project.name = cleanText(fileName.replace(/\.(docx|dotx)$/i,'')) || (en ? 'Imported Word Styles' : '导入的 Word 样式'); project.styles = []; project.lists = [];project.page={size:'A4',orientation:'portrait',top:2.54,bottom:2.54,left:2.54,right:2.54,gutter:0,defaultTab:1.27,header:1.27,footer:1.27};
   const defaults = child(stylesRoot,'docDefaults');
   const defaultRun = reader.run(child(child(defaults,'rPrDefault'),'rPr'),'文档默认字体');
   const defaultParagraph = reader.paragraph(child(child(defaults,'pPrDefault'),'pPr'),'文档默认段落');
-  const normal = {...createStyle('paragraph',normalRaw ? val(rawStyles.get(normalRaw),'name')??'正文':'正文'),id:'Normal',name:'正文',run:defaultRun,paragraph:defaultParagraph,next:'Normal',priority:0};
+  const normal = {...createStyle('paragraph',en ? 'Normal' : '正文'),id:'Normal',run:defaultRun,paragraph:defaultParagraph,next:'Normal',priority:0};
   if (!normalRaw) { project.styles.push(normal); names.add(normal.name); reader.warn('源文档没有默认段落样式，已补入正文（Normal）样式。'); }
   const candidates = [...rawStyles.entries()].filter(([id,node]) => !charToParagraph.has(id) && ['paragraph','character','table'].includes(attr(node,'type')??'paragraph'));
   candidates.sort(([a],[b])=>a===normalRaw?-1:b===normalRaw?1:0);
@@ -342,7 +344,7 @@ function importedProject(files: Map<string, Uint8Array>, fileName: string): Impo
     idMap.set(rawId,id);
     const sourceName = val(node,'name')??rawId;
     if(sourceName.includes(','))reader.warn('样式或列表名称中的英文逗号已转换为中文逗号，以满足 Word 名称约束。');
-    const name = uniqueName(sourceName,names,'导入样式');
+    const name = uniqueName(sourceName,names,en ? 'Imported Style' : '导入样式');
     const style: Style = {id,name,type,quickFormat:bool(child(node,'qFormat'))??false,priority:Math.max(0,Math.min(99,Math.trunc(number(val(node,'uiPriority'))??99))),hidden:bool(child(node,'semiHidden'))??bool(child(node,'hidden'))??false,unhideWhenUsed:bool(child(node,'unhideWhenUsed'))??false,autoUpdate:bool(child(node,'autoRedefine'))??false,aliases:cleanText(val(node,'aliases')??''),run:{},paragraph:{}};
     project.styles.push(style); sourceMap.set(id,node);
     reader.unknown(node,['name','basedOn','next','link','aliases','qFormat','uiPriority','semiHidden','hidden','unhideWhenUsed','autoRedefine','rPr','pPr','tblPr','tcPr','trPr','tblStylePr'],`样式“${name}”`);
@@ -436,9 +438,9 @@ function importedProject(files: Map<string, Uint8Array>, fileName: string): Impo
     const abstract=resolveAbstract(abstractId);if(!abstract)return;
     const id=attr(abstract,'abstractNumId')??abstractId;
     const explicitName=val(abstract,'name'),styleLink=val(abstract,'styleLink'),styleName=styleLink?val(rawStyles.get(styleLink),'name'):undefined;
-    const sourceName=styleName??explicitName??`多级列表 ${project.lists.length+1}`;
+    const sourceName=styleName??explicitName??`${en ? 'Multilevel List' : '多级列表'} ${project.lists.length+1}`;
     if(sourceName.includes(','))reader.warn('样式或列表名称中的英文逗号已转换为中文逗号，以满足 Word 名称约束。');
-    const list=createList(uniqueName(sourceName,listNames,'导入多级列表'));
+    const list=createList(uniqueName(sourceName,listNames,en ? 'Imported Multilevel List' : '导入多级列表'));
     list.id=allocateId(`List_${numId??'Abstract_'+abstractId}`,used,'ImportedList');
     if(explicitName)list.listNumName=cleanText(explicitName);
     const galleryLevel=number(val(child(child(styleLink?rawStyles.get(styleLink):undefined,'pPr'),'numPr'),'ilvl'));if(galleryLevel!==undefined&&Number.isInteger(galleryLevel)&&galleryLevel>=0&&galleryLevel<=8)list.galleryLevel=galleryLevel;
@@ -478,21 +480,22 @@ function importedProject(files: Map<string, Uint8Array>, fileName: string): Impo
 }
 function boolAttr(e:Element,key:string){const value=attr(e,key);return value!==undefined&&!['0','false','off'].includes(value);}
 
-export function importWord(bytes: Uint8Array, fileName = '导入的 Word 样式.docx'): ImportResult {
+export function importWord(bytes: Uint8Array, fileName?: string, locale: Locale = 'zh'): ImportResult {
+  const sourceName = fileName ?? (locale === 'en' ? 'Imported Word Styles.docx' : '导入的 Word 样式.docx');
   const files = readArchive(bytes);
   const embedded=files.get('word/style-studio.json');
   if(embedded){
     try{return{project:validateProject(JSON.parse(decode(embedded))),warnings:['已从文件中恢复本应用嵌入的完整方案；若此文件后来在 Word 中修改过样式，嵌入方案可能与 Word 当前样式不同。正文不会导入。']};}
-    catch(error){const imported=importedProject(files,fileName);imported.warnings.unshift(`文件内嵌方案无法恢复，已改为提取 Word 样式：${error instanceof Error?error.message:'方案无效'}`);return imported;}
+    catch(error){const imported=importedProject(files,sourceName,locale);imported.warnings.unshift(`文件内嵌方案无法恢复，已改为提取 Word 样式：${error instanceof Error?error.message:'方案无效'}`);return imported;}
   }
-  return importedProject(files,fileName);
+  return importedProject(files,sourceName,locale);
 }
-export async function importFile(file: File): Promise<ImportResult> {
+export async function importFile(file: File, locale: Locale = 'zh'): Promise<ImportResult> {
   if(file.size>MAX_INPUT)throw new Error('导入文件不能超过 10 MB');
   if(/\.json$/i.test(file.name)){
     let parsed:unknown;try{parsed=JSON.parse(await file.text());}catch{throw new Error('JSON 文件无法解析，请使用导出的方案备份。');}
     return{project:validateProject(parsed),warnings:['已读取完整 JSON 方案。确认应用后将替换当前编辑方案；可以通过撤销恢复。']};
   }
   if(!/\.(docx|dotx)$/i.test(file.name))throw new Error('请选择 .docx、.dotx 或本应用的 .json 方案文件');
-  return importWord(new Uint8Array(await file.arrayBuffer()),file.name);
+  return importWord(new Uint8Array(await file.arrayBuffer()),file.name,locale);
 }

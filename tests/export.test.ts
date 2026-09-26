@@ -245,3 +245,46 @@ test('single-level bullet and numbered lists export native singleLevel definitio
  const {importWord}=await import('../src/import');
  assert.deepEqual(importWord(await exportDocument(p)).project,JSON.parse(JSON.stringify(p)));
 });
+
+test('English sample exports localize generated text, companion names and metadata', () => {
+  const project = createProject();
+  project.name = 'English Report';
+  project.styles.forEach((style, index) => { style.name = `Report Style ${index + 1}`; });
+  project.lists[0].name = 'Report Numbering';
+  project.lists.push(createList('Report Bullets', 'bullet'), createList('Report Numbers', 'numbered'));
+  const before = JSON.stringify(project);
+  const parts = buildParts(project, {sample: true, locale: 'en'});
+  const document = xml(parts, 'word/document.xml');
+  assert.doesNotMatch(document, /[\u3400-\u9fff]/);
+  assert.match(document, /English Report · Style Review Samples/);
+  assert.match(document, /Character style sample AaBb 123/);
+  assert.match(document, /Row 1 · Column 1/);
+  assert.match(document, /Multilevel list: Report Numbering/);
+  assert.match(document, /Bulleted list: Report Bullets/);
+  assert.match(document, /Numbered list: Report Numbers/);
+  assert.match(styleXml(xml(parts, 'word/styles.xml'), 'Heading1Char'), /Report Style 2 \(Character\)/);
+  assert.match(styleXml(xml(parts, 'word/styles.xml'), 'StudioTableSample'), /Table Sample Text/);
+  assert.match(xml(parts, 'docProps/core.xml'), /Word Style Studio/);
+  assert.doesNotMatch(xml(parts, 'docProps/core.xml') + xml(parts, 'docProps/app.xml'), /[\u3400-\u9fff]/);
+  assert.equal(JSON.stringify(project), before);
+  assert.deepEqual(JSON.parse(xml(parts, 'word/style-studio.json')), JSON.parse(before));
+});
+
+test('export language preserves user names, numbering and truly blank documents', () => {
+  const project = createProject();
+  project.name = '用户中文方案';
+  project.styles[1].name = '用户中文标题';
+  project.lists[0].name = '用户中文编号';
+  project.lists[0].levels[0].format = 'chineseCounting';
+  project.lists[0].levels[0].text = '第%1章';
+  const zh = buildParts(project, {sample: true});
+  const en = buildParts(project, {sample: true, locale: 'en'});
+  assert.match(xml(en, 'word/styles.xml'), /w:name w:val="用户中文标题"/);
+  assert.match(xml(en, 'word/styles.xml'), /w:name w:val="用户中文标题 \(Character\)"/);
+  assert.match(xml(en, 'word/document.xml'), /用户中文方案 · Style Review Samples/);
+  assert.match(xml(en, 'word/document.xml'), /Multilevel list: 用户中文编号/);
+  assert.equal(xml(en, 'word/numbering.xml'), xml(zh, 'word/numbering.xml'));
+  assert.equal(xml(en, 'word/style-studio.json'), xml(zh, 'word/style-studio.json'));
+  assert.equal(xml(buildParts(project, {locale: 'en'}), 'word/document.xml'), xml(buildParts(project), 'word/document.xml'));
+  assert.doesNotMatch(xml(buildParts(project, {locale: 'en'}), 'word/document.xml'), /<w:t\b/);
+});

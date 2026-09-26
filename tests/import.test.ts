@@ -53,3 +53,18 @@ test('invalid files and oversized inputs fail with useful errors', async () => {
   await assert.rejects(importFile(new File(['hello'],'old.doc')),/请选择/);
   await assert.rejects(importFile(new File(['{'],'bad.json')),/无法解析/);
 });
+
+test('English import preserves explicit Chinese project, style and list data in backups', async () => {
+  const project = createProject();
+  project.name = '用户中文方案';
+  project.styles[0].name = '用户正文';
+  project.styles[1].name = '用户标题';
+  project.lists[0].name = '用户编号';
+  project.lists[0].levels[0].text = '第%1章';
+  const expected = JSON.parse(JSON.stringify(project));
+  const bytes = zipSync({'word/style-studio.json': strToU8(JSON.stringify(project))});
+  assert.deepEqual(importWord(bytes, undefined, 'en').project, expected);
+  assert.deepEqual(importWord(bytes, 'English filename.docx', 'en').project, expected);
+  assert.deepEqual((await importFile(new File([bytes], 'English filename.docx'), 'en')).project, expected);
+  assert.deepEqual((await importFile(new File([JSON.stringify(project)], 'English backup.json'), 'en')).project, expected);
+});

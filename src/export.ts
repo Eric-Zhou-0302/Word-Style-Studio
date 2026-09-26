@@ -1,8 +1,9 @@
 import { strToU8, zipSync } from 'fflate';
 import { baseParagraph, baseRun, paragraphStyle, regionNames, resolveStyle, validateProject } from './model';
 import type { Border, Borders, Level, Paragraph, Project, Run, Style, Table } from './model';
+import type { Locale } from './i18n';
 
-export interface ExportOptions { format?: 'docx' | 'dotx'; sample?: boolean }
+export interface ExportOptions { format?: 'docx' | 'dotx'; sample?: boolean; locale?: Locale }
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const PKG = 'http://schemas.openxmlformats.org/package/2006/relationships';
@@ -128,10 +129,10 @@ function sampleTableStyleId(project: Project): string {
   const ids = new Set([...project.styles.flatMap(s => [s.id, s.id + 'Char']), ...project.lists.map(l => l.id)]);
   let id = 'StudioTableSample'; while (ids.has(id)) id += '_'; return id;
 }
-function stylesPart(project: Project, sample = false): string {
+function stylesPart(project: Project, sample = false, locale: Locale = 'zh'): string {
   let xml = wrap('docDefaults', wrap('rPrDefault', runProperties({ ...baseRun, shading: undefined }, baseRun, false, true)) + wrap('pPrDefault', paragraphProperties({ ...baseParagraph, shading: undefined })));
   if (!project.styles.some(s=>s.id==='Normal')) xml += '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:semiHidden/></w:style>';
-  if (sample) xml += `<w:style w:type="paragraph" w:customStyle="1" w:styleId="${sampleTableStyleId(project)}"><w:name w:val="表格示例正文"/><w:semiHidden/></w:style>`;
+  if (sample) xml += `<w:style w:type="paragraph" w:customStyle="1" w:styleId="${sampleTableStyleId(project)}">${val('name', locale === 'en' ? 'Table Sample Text' : '表格示例正文')}<w:semiHidden/></w:style>`;
   for (const style of project.styles) {
     const base = project.styles.find(s => s.id === style.basedOn);
     const inherited = base ? resolveStyle(project, base) : { run: baseRun, paragraph: baseParagraph };
@@ -163,7 +164,7 @@ function stylesPart(project: Project, sample = false): string {
       const linkedBase = base?.type === 'linked' ? `${base.id}Char` : undefined;
       // 字符样式不能 basedOn 段落样式，非链接父样式的字体在字符副本中展开。
       const run = linkedBase ? style.run : resolved.run;
-      xml += `<w:style w:type="character" w:customStyle="1" w:styleId="${escape(style.id)}Char">${val('name', `${style.name}（字符）`)}${val('basedOn', linkedBase)}${val('link', style.id)}${styleMetadata(style, true)}${runProperties(run, linkedBase ? inherited.run : baseRun, true)}</w:style>`;
+      xml += `<w:style w:type="character" w:customStyle="1" w:styleId="${escape(style.id)}Char">${val('name', `${style.name}${locale === 'en' ? ' (Character)' : '（字符）'}`)}${val('basedOn', linkedBase)}${val('link', style.id)}${styleMetadata(style, true)}${runProperties(run, linkedBase ? inherited.run : baseRun, true)}</w:style>`;
     }
   }
   project.lists.forEach((list, index) => {
@@ -218,38 +219,40 @@ function numberingPart(project: Project, pictures: Picture[]): string {
 function textRun(text: string, styleId?: string): string {
   return `<w:r>${styleId ? wrap('rPr', val('rStyle', styleId)) : ''}<w:t xml:space="preserve">${escape(text)}</w:t></w:r>`;
 }
-function sampleBody(project: Project): string {
-  let body = `<w:p>${textRun(`${project.name} · 样式验收样例`)}</w:p>`;
+function sampleBody(project: Project, locale: Locale): string {
+  const en = locale === 'en';
+  let body = `<w:p>${textRun(`${project.name} · ${en ? 'Style Review Samples' : '样式验收样例'}`)}</w:p>`;
   for (const style of project.styles) {
-    if (paragraphStyle(style)) body += `<w:p>${paragraphProperties({}, baseParagraph, '', style.id)}${textRun(`${style.name} — 中文样式预览，The quick brown fox 0123456789。`)}</w:p>`;
-    if (style.type === 'character' || style.type === 'linked') body += `<w:p>${textRun(`${style.name}：`)}${textRun('字符样式示例 AaBb 123 中文', style.type === 'linked' ? `${style.id}Char` : style.id)}</w:p>`;
+    if (paragraphStyle(style)) body += `<w:p>${paragraphProperties({}, baseParagraph, '', style.id)}${textRun(`${style.name} — ${en ? 'Style preview. The quick brown fox 0123456789.' : '中文样式预览，The quick brown fox 0123456789。'}`)}</w:p>`;
+    if (style.type === 'character' || style.type === 'linked') body += `<w:p>${textRun(`${style.name}${en ? ': ' : '：'}`)}${textRun(en ? 'Character style sample AaBb 123' : '字符样式示例 AaBb 123 中文', style.type === 'linked' ? `${style.id}Char` : style.id)}</w:p>`;
     if (style.type === 'table') {
-      const rows = Array.from({ length: 5 }, (_, row) => `<w:tr>${Array.from({ length: 3 }, (_, col) => `<w:tc><w:tcPr><w:tcW w:w="2400" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:pStyle w:val="${sampleTableStyleId(project)}"/></w:pPr>${textRun(row === 0 ? `${style.name} · 栏 ${col + 1}` : `第 ${row} 行 · 第 ${col + 1} 列`)}</w:p></w:tc>`).join('')}</w:tr>`).join('');
+      const rows = Array.from({ length: 5 }, (_, row) => `<w:tr>${Array.from({ length: 3 }, (_, col) => `<w:tc><w:tcPr><w:tcW w:w="2400" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:pStyle w:val="${sampleTableStyleId(project)}"/></w:pPr>${textRun(row === 0 ? `${style.name} · ${en ? 'Column' : '栏'} ${col + 1}` : en ? `Row ${row} · Column ${col + 1}` : `第 ${row} 行 · 第 ${col + 1} 列`)}</w:p></w:tc>`).join('')}</w:tr>`).join('');
       body += `<w:tbl><w:tblPr>${val('tblStyle', style.id)}<w:tblW w:w="0" w:type="auto"/><w:tblLook w:val="01E0" w:firstRow="1" w:lastRow="1" w:firstColumn="1" w:lastColumn="1" w:noHBand="0" w:noVBand="0"/></w:tblPr><w:tblGrid><w:gridCol w:w="2400"/><w:gridCol w:w="2400"/><w:gridCol w:w="2400"/></w:tblGrid>${rows}</w:tbl><w:p/>`;
     }
   }
   project.lists.forEach((list, index) => {
-    body += `<w:p>${textRun(`多级列表：${list.name}`)}</w:p>`;
+    body += `<w:p>${textRun(en ? `${list.levels.length > 1 ? 'Multilevel list' : list.levels[0].format === 'bullet' ? 'Bulleted list' : 'Numbered list'}: ${list.name}` : `多级列表：${list.name}`)}</w:p>`;
     // 先走完整九级，再回到上级；验收文档中的编号始终由 Word 动态计算。
     (list.levels.length===1?[0,0,0]:[...list.levels.map((_, i) => i), 0, 1, 2, 1]).forEach(level => {
-      body += `<w:p>${paragraphProperties({}, baseParagraph, numPr(index + 1, level), list.levels[level].linkedStyle)}${textRun(`第 ${level + 1} 级列表内容`)}</w:p>`;
+      body += `<w:p>${paragraphProperties({}, baseParagraph, numPr(index + 1, level), list.levels[level].linkedStyle)}${textRun(en ? `Level ${level + 1} list content` : `第 ${level + 1} 级列表内容`)}</w:p>`;
     });
   });
   return body;
 }
-function documentPart(project: Project, sample: boolean): string {
+function documentPart(project: Project, sample: boolean, locale: Locale): string {
   const sizes = { A4: [11906, 16838], A5: [8391, 11906], Letter: [12240, 15840] };
   const dimensions = [...sizes[project.page.size]];
   if (project.page.orientation === 'landscape') dimensions.reverse();
   const page = project.page;
   const section = `<w:sectPr>${leaf('w:pgSz', { 'w:w': dimensions[0], 'w:h': dimensions[1], 'w:orient': page.orientation })}${leaf('w:pgMar', { 'w:top': cm(page.top), 'w:right': cm(page.right), 'w:bottom': cm(page.bottom), 'w:left': cm(page.left), 'w:header': cm(page.header??1.27), 'w:footer': cm(page.footer??1.27), 'w:gutter': cm(page.gutter) })}<w:cols w:space="720"/><w:docGrid w:type="lines" w:linePitch="312"/></w:sectPr>`;
-  return `${XML}<w:document ${NS}><w:body>${sample ? sampleBody(project) : '<w:p><w:pPr><w:pStyle w:val="Normal"/></w:pPr></w:p>'}${section}</w:body></w:document>`;
+  return `${XML}<w:document ${NS}><w:body>${sample ? sampleBody(project, locale) : '<w:p><w:pPr><w:pStyle w:val="Normal"/></w:pPr></w:p>'}${section}</w:body></w:document>`;
 }
 const relationships = (entries: { id: string; type: string; target: string }[]) => `${XML}<Relationships xmlns="${PKG}">${entries.map(entry => leaf('Relationship', { Id: entry.id, Type: entry.type, Target: entry.target })).join('')}</Relationships>`;
 
 /** 产生独立 OOXML parts，既供 ZIP 打包，也供结构验收和自家配置往返。 */
 export function buildParts(input: Project, options: ExportOptions = {}): Record<string, string | Uint8Array> {
   const project = validateProject(input);
+  const locale = options.locale ?? 'zh';
   const pictures = collectPictures(project);
   const parts: Record<string, string | Uint8Array> = {};
   const mainType = options.format === 'dotx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml';
@@ -257,13 +260,15 @@ export function buildParts(input: Project, options: ExportOptions = {}): Record<
   parts['[Content_Types].xml'] = `${XML}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">${[['rels', 'application/vnd.openxmlformats-package.relationships+xml'], ['xml', 'application/xml'], ['json', 'application/json'], ['png', 'image/png'], ['jpg', 'image/jpeg']].map(([Extension, ContentType]) => leaf('Default', { Extension, ContentType })).join('')}${Object.entries(overrides).map(([PartName, ContentType]) => leaf('Override', { PartName, ContentType })).join('')}</Types>`;
   parts['_rels/.rels'] = relationships([{ id: 'rIdDocument', type: `${R}/officeDocument`, target: 'word/document.xml' }, { id: 'rIdCore', type: 'http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties', target: 'docProps/core.xml' }, { id: 'rIdApp', type: `${R}/extended-properties`, target: 'docProps/app.xml' }]);
   parts['word/_rels/document.xml.rels'] = relationships([{ id: 'rIdStyles', type: `${R}/styles`, target: 'styles.xml' }, { id: 'rIdNumbering', type: `${R}/numbering`, target: 'numbering.xml' }, { id: 'rIdSettings', type: `${R}/settings`, target: 'settings.xml' }, { id: 'rIdStudio', type: 'https://style-studio.local/relationships/project', target: 'style-studio.json' }]);
-  parts['word/styles.xml'] = stylesPart(project, options.sample ?? false);
+  parts['word/styles.xml'] = stylesPart(project, options.sample ?? false, locale);
   parts['word/numbering.xml'] = numberingPart(project, pictures);
-  parts['word/document.xml'] = documentPart(project, options.sample ?? false);
+  parts['word/document.xml'] = documentPart(project, options.sample ?? false, locale);
   parts['word/settings.xml'] = `${XML}<w:settings ${NS}><w:zoom w:percent="100"/>${val('defaultTabStop', cm(project.page.defaultTab))}<w:characterSpacingControl w:val="doNotCompress"/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>`;
   parts['word/style-studio.json'] = JSON.stringify(project);
-  parts['docProps/core.xml'] = `${XML}<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>${escape(project.name)}</dc:title><dc:creator>Word 样式工作室</dc:creator><dc:description>包含自定义样式与动态多级列表的${options.sample ? '验收样例' : '空白文档'}</dc:description></cp:coreProperties>`;
-  parts['docProps/app.xml'] = `${XML}<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Word 样式工作室</Application></Properties>`;
+  const application = locale === 'en' ? 'Word Style Studio' : 'Word 样式工作室';
+  const description = locale === 'en' ? `${options.sample ? 'Review samples' : 'Blank document'} with custom styles and dynamic multilevel lists` : `包含自定义样式与动态多级列表的${options.sample ? '验收样例' : '空白文档'}`;
+  parts['docProps/core.xml'] = `${XML}<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>${escape(project.name)}</dc:title><dc:creator>${application}</dc:creator><dc:description>${description}</dc:description></cp:coreProperties>`;
+  parts['docProps/app.xml'] = `${XML}<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>${application}</Application></Properties>`;
   if (pictures.length) {
     parts['word/_rels/numbering.xml.rels'] = relationships(pictures.map(p => ({ id: `rIdBullet${p.id}`, type: `${R}/image`, target: p.path })));
     pictures.forEach(p => { parts[`word/${p.path}`] = p.data; });

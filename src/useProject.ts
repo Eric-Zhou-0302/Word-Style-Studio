@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import { createProject, validateProject, type Project } from './model';
+import type { Locale } from './i18n';
 
 export const STORAGE_KEY='style-studio.project.v1';
 type History={past:Project[];present:Project;future:Project[]};
@@ -10,9 +11,9 @@ function reducer(state:History,action:Action):History{
  if(JSON.stringify(action.value)===JSON.stringify(state.present))return state;
  return {past:[...state.past.slice(-79),state.present],present:action.value,future:[]};
 }
-export function useProject(active=true){
+export function useProject(active=true,locale:Locale='zh'){
  const [loadWarning]=useState(()=>{try{const raw=localStorage.getItem(STORAGE_KEY);if(raw)validateProject(JSON.parse(raw));return '';}catch{return '上次保存的方案无法读取。原始数据仍保留在浏览器中，请先下载恢复文件。';}});
- const [state,dispatch]=useReducer(reducer,undefined,()=>{try{const raw=localStorage.getItem(STORAGE_KEY);return {past:[],present:raw?validateProject(JSON.parse(raw)):createProject(),future:[]};}catch{return {past:[],present:createProject(),future:[]};}});
+ const [state,dispatch]=useReducer(reducer,undefined,()=>{try{const raw=localStorage.getItem(STORAGE_KEY);return {past:[],present:raw?validateProject(JSON.parse(raw)):createProject(locale),future:[]};}catch{return {past:[],present:createProject(locale),future:[]};}});
  const [saveError,setSaveError]=useState('');const [saved,setSaved]=useState(false);const [recoveryNeeded,setRecoveryNeeded]=useState(!!loadWarning);
  const validationError=useMemo(()=>{try{validateProject(state.present);return '';}catch(e){return e instanceof Error?e.message:'请检查方案设置';}},[state.present]);
  useEffect(()=>{setSaved(false);if(validationError||recoveryNeeded)return;const timer=setTimeout(()=>{try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state.present));setSaveError('');setSaved(true);}catch{setSaveError('浏览器存储空间不足或不可用。请导出方案 JSON 保存本次修改。');}},400);return()=>clearTimeout(timer);},[state.present,validationError,recoveryNeeded]);

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { Locale } from './i18n';
 
 const num = (min: number, max: number) => z.number().finite().min(min).max(max);
 const text = z.string().max(255).refine(s => !/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(s), '文本包含无效字符');
@@ -91,51 +92,53 @@ export function listKind(list:List):ListKind { return list.kind??'multilevel'; }
 export function createList(name='新多级列表', kind:ListKind='multilevel'): List {
   return {id:makeId('List'),name,kind,levels:Array.from({length:kind==='multilevel'?9:1},(_,i)=>({format:kind==='bullet'?'bullet':'decimal',text:kind==='bullet'?'•':kind==='numbered'?'%1.':Array.from({length:i+1},(_,n)=>`%${n+1}`).join('.'),start:1,restart:i,legal:false,alignment:'left',follow:'tab',indent:0.75*(i+1),hanging:0.75,tabPosition:0.75*(i+1),run:{}}))};
 }
-export function createBlankProject():Project {
-  return {version:1,name:'未命名方案',
+export function createBlankProject(locale:Locale='zh'):Project {
+  return {version:1,name:locale==='en'?'Untitled Project':'未命名方案',
     page:{size:'A4',orientation:'portrait',top:2.54,bottom:2.54,left:2.54,right:2.54,header:1.27,footer:1.27,gutter:0,defaultTab:1.27},
-    styles:[{...createStyle('paragraph','正文'),id:'Normal',next:'Normal',priority:0}],lists:[]};
+    styles:[{...createStyle('paragraph',locale==='en'?'Normal':'正文'),id:'Normal',next:'Normal',priority:0}],lists:[]};
 }
-export function createProject(): Project {
-  const normal:Style={...createStyle('paragraph','正文'),id:'Normal',priority:99,quickFormat:false,next:'Normal',run:{font:'楷体',size:14,color:'#000000'},paragraph:{alignment:'both',lineRule:'auto',line:1,before:0,after:0,firstLine:0,keepLines:true}};
+export function createProject(locale:Locale='zh'): Project {
+  // 仅在创建内置方案时选择名称，切换界面语言不改写已保存或用户输入的名称。
+  const name=(zh:string,en:string)=>locale==='en'?en:zh;
+  const normal:Style={...createStyle('paragraph',name('正文','Normal')),id:'Normal',priority:99,quickFormat:false,next:'Normal',run:{font:'楷体',size:14,color:'#000000'},paragraph:{alignment:'both',lineRule:'auto',line:1,before:0,after:0,firstLine:0,keepLines:true}};
   const paragraph=(id:string,name:string,run:Run={},paragraph:Paragraph={},next='ReportBody'):Style=>({
     ...createStyle('paragraph',name),id,next,run:{...normal.run,...run},paragraph:{...normal.paragraph,...paragraph},
   });
   const centered:Paragraph={alignment:'center',left:0,right:0,firstLine:0};
   const rows:Style[]=[
-    paragraph('ReportTitle','报告标题',{font:'宋体',size:26,bold:true},{...centered,line:1.5}),
-    paragraph('ReportSubtitle','报告副标题',{size:16},{...centered,line:1.5}),
-    paragraph('Signature','落款',{size:16,bold:true},{alignment:'right',line:1.15}),
-    paragraph('TocTitle','目录标题',{size:18,bold:true},{...centered,keepNext:true}),
-    ...[0,1,2].map(i=>paragraph('Toc'+(i+1),['目录一级','目录二级','目录三级'][i],{font:i===0?'黑体':'楷体',size:16-i,bold:true},{alignment:'left',left:[0,.74,1.48][i],tabs:[{position:16,alignment:'right',leader:'dot'}]})),
-    ...[0,1,2,3,4,5].map(i=>paragraph('Heading'+(i+1),['一级标题','二级标题','三级标题','四级标题','五级标题','六级标题'][i],{font:i===0?'黑体':'楷体',size:[16,15,14,14,14,14][i],bold:i<3},{alignment:'left',before:[12,8,5,0,0,0][i],after:[12,8,5,0,0,0][i],outlineLevel:i,keepNext:true,left:i<2?0:1.73,firstLine:i<2?0:-.74})),
-    paragraph('ReportBody','报告正文',{}, {indentUnit:'char',firstLine:2}),
-    paragraph('ReportBodyPlain','报告正文无缩进'),
-    paragraph('BodyNumber1','正文编号一级',{}, {left:1.73,firstLine:-.74},'BodyNumber1'),
-    paragraph('BodyNumber2','正文编号二级',{}, {left:2.47,firstLine:-.74},'BodyNumber2'),
-    paragraph('BodyBullet','正文项目符号',{}, {left:1.73,firstLine:-.74},'BodyBullet'),
-    paragraph('TableCaption','表题',{size:10.5,bold:true},{...centered,before:5,after:5,keepNext:true}),
-    paragraph('FigureCaption','图题',{size:10.5,bold:true},{...centered,before:5,after:5,keepNext:true}),
-    paragraph('FigureParagraph','独立图表段',{size:10.5},centered),
-    paragraph('Source','资料来源',{size:10.5,color:'#595959'},{alignment:'left',after:5}),
-    paragraph('FootnoteText','脚注',{size:10.5},{alignment:'left'}),
-    paragraph('TableHeader','表格表头',{size:12,bold:true},centered,'TableHeader'),
-    paragraph('TableBodyCenter','表格表体居中',{size:12},centered,'TableBodyCenter'),
-    paragraph('TableBodyLeft','表格表体左对齐',{size:12},{alignment:'left'},'TableBodyLeft'),
-    paragraph('TableBodyRight','表格表体右对齐',{size:12},{alignment:'right'},'TableBodyRight'),
-    paragraph('TableFooter','表格表尾',{size:12,bold:true},centered,'TableFooter'),
-    {...createStyle('table','标准表格'),id:'StandardTable',run:{},paragraph:{},table:{...structuredClone(tableDefault),cellMargin:.14,cellMargins:{top:.14,bottom:.14,left:.18,right:.18},border:{style:'single',color:'#000000',width:.5,space:0},shading:'#ffffff',verticalAlign:'center',regions:{}}},
+    paragraph('ReportTitle',name('报告标题','Report Title'),{font:'宋体',size:26,bold:true},{...centered,line:1.5}),
+    paragraph('ReportSubtitle',name('报告副标题','Report Subtitle'),{size:16},{...centered,line:1.5}),
+    paragraph('Signature',name('落款','Signature'),{size:16,bold:true},{alignment:'right',line:1.15}),
+    paragraph('TocTitle',name('目录标题','Contents Heading'),{size:18,bold:true},{...centered,keepNext:true}),
+    ...[0,1,2].map(i=>paragraph('Toc'+(i+1),name(['目录一级','目录二级','目录三级'][i],`TOC ${i+1}`),{font:i===0?'黑体':'楷体',size:16-i,bold:true},{alignment:'left',left:[0,.74,1.48][i],tabs:[{position:16,alignment:'right',leader:'dot'}]})),
+    ...[0,1,2,3,4,5].map(i=>paragraph('Heading'+(i+1),name(['一级标题','二级标题','三级标题','四级标题','五级标题','六级标题'][i],`Heading ${i+1}`),{font:i===0?'黑体':'楷体',size:[16,15,14,14,14,14][i],bold:i<3},{alignment:'left',before:[12,8,5,0,0,0][i],after:[12,8,5,0,0,0][i],outlineLevel:i,keepNext:true,left:i<2?0:1.73,firstLine:i<2?0:-.74})),
+    paragraph('ReportBody',name('报告正文','Report Body'),{}, {indentUnit:'char',firstLine:2}),
+    paragraph('ReportBodyPlain',name('报告正文无缩进','Report Body No Indent')),
+    paragraph('BodyNumber1',name('正文编号一级','Body Numbering 1'),{}, {left:1.73,firstLine:-.74},'BodyNumber1'),
+    paragraph('BodyNumber2',name('正文编号二级','Body Numbering 2'),{}, {left:2.47,firstLine:-.74},'BodyNumber2'),
+    paragraph('BodyBullet',name('正文项目符号','Body Bullet'),{}, {left:1.73,firstLine:-.74},'BodyBullet'),
+    paragraph('TableCaption',name('表题','Table Caption'),{size:10.5,bold:true},{...centered,before:5,after:5,keepNext:true}),
+    paragraph('FigureCaption',name('图题','Figure Caption'),{size:10.5,bold:true},{...centered,before:5,after:5,keepNext:true}),
+    paragraph('FigureParagraph',name('独立图表段','Figure Paragraph'),{size:10.5},centered),
+    paragraph('Source',name('资料来源','Source'),{size:10.5,color:'#595959'},{alignment:'left',after:5}),
+    paragraph('FootnoteText',name('脚注','Footnote Text'),{size:10.5},{alignment:'left'}),
+    paragraph('TableHeader',name('表格表头','Table Header'),{size:12,bold:true},centered,'TableHeader'),
+    paragraph('TableBodyCenter',name('表格表体居中','Table Body Center'),{size:12},centered,'TableBodyCenter'),
+    paragraph('TableBodyLeft',name('表格表体左对齐','Table Body Left'),{size:12},{alignment:'left'},'TableBodyLeft'),
+    paragraph('TableBodyRight',name('表格表体右对齐','Table Body Right'),{size:12},{alignment:'right'},'TableBodyRight'),
+    paragraph('TableFooter',name('表格表尾','Table Footer'),{size:12,bold:true},centered,'TableFooter'),
+    {...createStyle('table',name('标准表格','Standard Table')),id:'StandardTable',run:{},paragraph:{},table:{...structuredClone(tableDefault),cellMargin:.14,cellMargins:{top:.14,bottom:.14,left:.18,right:.18},border:{style:'single',color:'#000000',width:.5,space:0},shading:'#ffffff',verticalAlign:'center',regions:{}}},
   ];
   rows.forEach((style,i)=>style.priority=i+1);
-  const headings=createList('标题层级');headings.id='Headings';
+  const headings=createList(name('标题层级','Heading Numbering'));headings.id='Headings';
   const formats:Level['format'][]=['chineseCounting','chineseCounting','decimal','decimal','upperLetter','lowerLetter'];
   const texts=['%1、','（%2）','%3.','（%4）','%5.','%6.'];
   headings.levels.forEach((l,i)=>{if(i<6)Object.assign(l,{format:formats[i],text:texts[i],linkedStyle:'Heading'+(i+1),indent:i<2?0:1.73,hanging:i<2?0:.74,tabPosition:i<2?0:1.73,follow:i===2?'tab':'nothing'});});
-  const body=createList('正文编号');body.id='BodyNumbering';
+  const body=createList(name('正文编号','Body Numbering'));body.id='BodyNumbering';
   body.levels.slice(0,2).forEach((l,i)=>Object.assign(l,{text:i===0?'%1、':'（%2）',linkedStyle:'BodyNumber'+(i+1),indent:i===0?1.73:2.47,hanging:.74,tabPosition:i===0?1.73:2.47,follow:'nothing'}));
-  const bullets=createList('正文项目符号','bullet');bullets.id='BodyBullets';
+  const bullets=createList(name('正文项目符号','Body Bullets'),'bullet');bullets.id='BodyBullets';
   Object.assign(bullets.levels[0],{text:'•',linkedStyle:'BodyBullet',indent:1.73,hanging:.74,tabPosition:1.73,follow:'tab',run:{color:'#000000'}});
-  return {version:1,name:'通用报告样式方案',page:{size:'A4',orientation:'portrait',top:2.75,bottom:2.75,left:2.5,right:2.5,header:1.5,footer:1.5,gutter:0,defaultTab:1.27},styles:rows,lists:[headings,body,bullets]};
+  return {version:1,name:name('通用报告样式方案','General Report Styles'),page:{size:'A4',orientation:'portrait',top:2.75,bottom:2.75,left:2.5,right:2.5,header:1.5,footer:1.5,gutter:0,defaultTab:1.27},styles:rows,lists:[headings,body,bullets]};
 }
 
 export function styleChain(project: Project, style: Style): Style[] {

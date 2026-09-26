@@ -6,6 +6,26 @@ import {importWord} from '../src/import';
 import {levelLabel,simulateList} from '../src/numbering';
 
 const names=['报告标题','报告副标题','落款','目录标题','目录一级','目录二级','目录三级','一级标题','二级标题','三级标题','四级标题','五级标题','六级标题','报告正文','报告正文无缩进','正文编号一级','正文编号二级','正文项目符号','表题','图题','独立图表段','资料来源','脚注','表格表头','表格表体居中','表格表体左对齐','表格表体右对齐','表格表尾','标准表格'];
+test('English presets localize project, style and list names while preserving report formatting and bindings',()=>{
+ const zh=validateProject(createProject('zh'));const en=validateProject(createProject('en'));
+ assert.equal(en.name,'General Report Styles');
+ assert.deepEqual(en.styles.map(s=>s.name),['Report Title','Report Subtitle','Signature','Contents Heading','TOC 1','TOC 2','TOC 3','Heading 1','Heading 2','Heading 3','Heading 4','Heading 5','Heading 6','Report Body','Report Body No Indent','Body Numbering 1','Body Numbering 2','Body Bullet','Table Caption','Figure Caption','Figure Paragraph','Source','Footnote Text','Table Header','Table Body Center','Table Body Left','Table Body Right','Table Footer','Standard Table']);
+ assert.deepEqual(en.lists.map(l=>l.name),['Heading Numbering','Body Numbering','Body Bullets']);
+ assert.deepEqual({...en,name:zh.name,styles:en.styles.map((s,i)=>({...s,name:zh.styles[i].name})),lists:en.lists.map((l,i)=>({...l,name:zh.lists[i].name}))},zh);
+ assert.deepEqual(createProject().styles.map(s=>s.name),names);
+ const parts=buildParts(en);const xml=String(parts['word/styles.xml']);
+ for(const item of [...en.styles,...en.lists])assert.ok(xml.includes(`<w:name w:val="${item.name}"/>`),item.name);
+ assert.doesNotMatch(String(parts['word/document.xml']),/<w:t[ >]/);
+});
+test('English blank project uses Normal and keeps the same minimal document structure',()=>{
+ const en=validateProject(createBlankProject('en'));const zh=createBlankProject('zh');
+ assert.equal(en.name,'Untitled Project');assert.equal(en.styles[0].name,'Normal');
+ assert.deepEqual({...en,name:zh.name,styles:en.styles.map(s=>({...s,name:'正文'}))},zh);
+ const parts=buildParts(en);assert.match(String(parts['word/styles.xml']),/<w:name w:val="Normal"\/>/);
+ assert.doesNotMatch(String(parts['word/styles.xml']),/正文|ReportBody/);
+ assert.doesNotMatch(String(parts['word/document.xml']),/<w:t[ >]/);
+ assert.doesNotMatch(String(parts['word/numbering.xml']),/<w:abstractNum[ >]|<w:num[ >]/);
+});
 test('blank project contains only an independent Normal and exports no report or list definitions',()=>{
  const p=validateProject(createBlankProject());assert.equal(p.name,'未命名方案');
  assert.deepEqual(p.styles.map(s=>s.id),['Normal']);assert.deepEqual(p.lists,[]);
