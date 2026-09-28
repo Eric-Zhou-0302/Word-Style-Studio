@@ -1,7 +1,7 @@
 import { useI18n } from '../i18n';
 import { useState } from 'react';
 import { ChevronDown, ArrowDown, Link2, Plus, ImagePlus, X, Settings2 } from 'lucide-react';
-import { listKind, baseRun, baseParagraph, bindStyle, canBaseOn, paragraphStyle, resolveStyle, typeLabels, formatLabels, regionNames, tableDefault, type Project, type Style, type List, type Level, type Table, type TableRegion } from '../model';
+import { listKind, baseRun, baseParagraph, bindStyle, canBaseOn, paragraphStyle, resolveStyle, typeLabels, formatLabels, regionNames, tableDefault, marginPresets, selectedMarginPreset, type MarginPreset, type Project, type Style, type List, type Level, type Table, type TableRegion } from '../model';
 import { levelLabel } from '../numbering';
 import { Field, TextInput, Select, NumberInput, ColorInput, Section, Toggle, Note } from './Fields';
 import { RunEditor, ParagraphEditor, DecorationEditor, BorderEditor, BordersEditor } from './FormatEditors';
@@ -49,6 +49,34 @@ export function ListEditor({project,list,level,onLevel,onChange,onBind,onError}:
 }
 
 export function PageEditor({project,onChange}:{project:Project;onChange:(p:Project)=>void}){
- const {ui,fmt}=useI18n();
- const page=project.page;return <div className="editor-content"><Section title={ui("纸张")}><div className="field-grid"><Field label={ui("纸张大小")}><Select label={ui("纸张大小")} value={page.size} onChange={v=>onChange({...project,page:{...page,size:v as typeof page.size}})} options={[["A4","A4 · 210 × 297 mm"],["A5","A5 · 148 × 210 mm"],["Letter","Letter · 8.5 × 11 in"]]}/></Field><Field label={ui("纸张方向")}><Select label={ui("纸张方向")} value={page.orientation} onChange={v=>onChange({...project,page:{...page,orientation:v as typeof page.orientation}})} options={[["portrait",ui("纵向")],["landscape",ui("横向")]]}/></Field></div></Section><Section title={ui("页边距")}><div className="field-grid">{([['top',ui("上")],['bottom',ui("下")],['left',ui("左")],['right',ui("右")],['gutter',ui("装订线")]] as const).map(([k,l])=><Field label={l} key={k}><NumberInput label={fmt("{0}页边距",l)} value={page[k]} min={0} max={k==='gutter'?5:10} step={0.1} unit="cm" onChange={v=>onChange({...project,page:{...page,[k]:v}})}/></Field>)}</div></Section><Section title={ui("页眉页脚位置")} description={ui("设置距纸张边缘的距离，不添加页眉页脚内容。")}><div className="field-grid">{([["header",ui("页眉距顶端")],["footer",ui("页脚距底端")]] as const).map(([key,label])=><Field key={key} label={label}><NumberInput label={label} value={page[key]??1.27} min={0} max={10} step={0.05} unit="cm" onChange={v=>onChange({...project,page:{...page,[key]:v}})}/></Field>)}</div></Section><Section title={ui("默认制表位")}><NumberInput label={ui("默认制表位间距")} value={page.defaultTab} min={.1} max={10} step={.1} unit="cm" onChange={v=>onChange({...project,page:{...page,defaultTab:v}})}/></Section><Note>{ui("页面设置会应用于导出的文档。段落与字体的默认设置可在“正文”样式中修改。")}</Note></div>;
+ const {ui,fmt,t}=useI18n();
+ const page=project.page;
+ const currentPreset=selectedMarginPreset(page);
+ const presetNames:Record<MarginPreset,string>={normal:t('常规','Normal'),narrow:ui('窄'),moderate:ui('中等'),wide:ui('宽'),mirrored:ui('对称')};
+ function applyPreset(key:MarginPreset){
+  onChange({...project,page:{...page,...marginPresets[key],gutter:0,mirrorMargins:key==='mirrored',customMargins:false}});
+ }
+ return <div className="editor-content">
+  <Section title={ui("纸张")}><div className="field-grid">
+   <Field label={ui("纸张大小")}><Select label={ui("纸张大小")} value={page.size} onChange={v=>onChange({...project,page:{...page,size:v as typeof page.size}})} options={[["A4","A4 · 210 × 297 mm"],["A5","A5 · 148 × 210 mm"],["Letter","Letter · 8.5 × 11 in"]]}/></Field>
+   <Field label={ui("纸张方向")}><Select label={ui("纸张方向")} value={page.orientation} onChange={v=>onChange({...project,page:{...page,orientation:v as typeof page.orientation}})} options={[["portrait",ui("纵向")],["landscape",ui("横向")]]}/></Field>
+  </div></Section>
+  <Section title={ui("页边距")}>
+   <div className="field-heading">{ui("页边距方案")}</div>
+   <div className="margin-presets" role="group" aria-label={ui("页边距方案")}>
+    {(Object.entries(marginPresets) as [MarginPreset,typeof marginPresets[MarginPreset]][]).map(([key,margins])=><button type="button" key={key} className={`margin-preset${currentPreset===key?' selected':''}`} aria-pressed={currentPreset===key} onClick={()=>applyPreset(key)}>
+     <span className="margin-preset-page" aria-hidden="true"><span style={{top:`${margins.top*8}%`,bottom:`${margins.bottom*8}%`,left:`${margins.left*8}%`,right:`${margins.right*8}%`}}/></span>
+     <span className="margin-preset-copy"><strong>{presetNames[key]}</strong><small>{fmt("上 {0} · 下 {1} · 左 {2} · 右 {3} 厘米",margins.top.toFixed(2),margins.bottom.toFixed(2),margins.left.toFixed(2),margins.right.toFixed(2))}</small></span>
+    </button>)}
+    <button type="button" className={`margin-preset${currentPreset==='custom'?' selected':''}`} aria-pressed={currentPreset==='custom'} onClick={()=>onChange({...project,page:{...page,customMargins:true}})}>
+     <span className="margin-preset-page margin-preset-custom-icon" aria-hidden="true"><Settings2 size={18}/></span>
+     <span className="margin-preset-copy"><strong>{ui("自定义")}</strong><small>{ui("单独调整页边距与装订线")}</small></span>
+    </button>
+   </div>
+   {currentPreset==='custom'&&<div className="field-grid margin-fields">{([['top',ui("上")],['bottom',ui("下")],['left',ui(page.mirrorMargins?"内侧":"左")],['right',ui(page.mirrorMargins?"外侧":"右")],['gutter',ui("装订线")]] as const).map(([key,label])=><Field label={label} key={key}><NumberInput label={fmt("{0}页边距",label)} value={page[key]} min={0} max={key==='gutter'?5:10} step={0.1} unit="cm" onChange={value=>onChange({...project,page:{...page,[key]:value,customMargins:true}})}/></Field>)}</div>}
+  </Section>
+  <Section title={ui("页眉页脚位置")} description={ui("设置距纸张边缘的距离，不添加页眉页脚内容。")}><div className="field-grid">{([["header",ui("页眉距顶端")],["footer",ui("页脚距底端")]] as const).map(([key,label])=><Field key={key} label={label}><NumberInput label={label} value={page[key]??1.27} min={0} max={10} step={0.05} unit="cm" onChange={v=>onChange({...project,page:{...page,[key]:v}})}/></Field>)}</div></Section>
+  <Section title={ui("默认制表位")}><NumberInput label={ui("默认制表位间距")} value={page.defaultTab} min={.1} max={10} step={.1} unit="cm" onChange={v=>onChange({...project,page:{...page,defaultTab:v}})}/></Section>
+  <Note>{ui("页面设置会应用于导出的文档。段落与字体的默认设置可在“正文”样式中修改。")}</Note>
+ </div>;
 }

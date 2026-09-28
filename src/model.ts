@@ -59,7 +59,7 @@ export const levelSchema = z.object({
 export const listSchema = z.object({ id, name: text.min(1), listNumName: text.optional(), galleryLevel: num(0,8).int().optional(), kind: z.enum(['multilevel','bullet','numbered']).optional(), levels: z.array(levelSchema).min(1).max(9) }).strict();
 export const projectSchema = z.object({
   version: z.literal(1), name: text.min(1),
-  page: z.object({ size: z.enum(['A4','A5','Letter']), orientation: z.enum(['portrait','landscape']), top: num(0,10), bottom: num(0,10), left: num(0,10), right: num(0,10), gutter: num(0,5), header:num(0,10).optional(), footer:num(0,10).optional(), defaultTab: num(0.1,10) }).strict(),
+  page: z.object({ size: z.enum(['A4','A5','Letter']), orientation: z.enum(['portrait','landscape']), top: num(0,10), bottom: num(0,10), left: num(0,10), right: num(0,10), mirrorMargins:z.boolean().optional(), customMargins:z.boolean().optional(), gutter: num(0,5), header:num(0,10).optional(), footer:num(0,10).optional(), defaultTab: num(0.1,10) }).strict(),
   styles: z.array(styleSchema).min(1).max(200), lists: z.array(listSchema).max(30),
 }).strict();
 
@@ -74,6 +74,25 @@ export type Style = z.infer<typeof styleSchema>;
 export type Level = z.infer<typeof levelSchema>;
 export type List = z.infer<typeof listSchema>;
 export type Project = z.infer<typeof projectSchema>;
+
+type PageMargins = Pick<Project['page'], 'top' | 'bottom' | 'left' | 'right'>;
+export const marginPresets = {
+  normal: { top: 2.54, bottom: 2.54, left: 3.18, right: 3.18 },
+  narrow: { top: 1.27, bottom: 1.27, left: 1.27, right: 1.27 },
+  moderate: { top: 2.54, bottom: 2.54, left: 1.91, right: 1.91 },
+  wide: { top: 2.54, bottom: 2.54, left: 5.08, right: 5.08 },
+  mirrored: { top: 2.54, bottom: 2.54, left: 3.18, right: 2.54 },
+} as const satisfies Record<string, PageMargins>;
+export type MarginPreset = keyof typeof marginPresets;
+export function matchingMarginPreset(page: PageMargins & {mirrorMargins?: boolean; gutter?: number}): MarginPreset | undefined {
+  if (Math.abs(page.gutter??0) >= 0.005) return undefined;
+  return (Object.keys(marginPresets) as MarginPreset[]).find(key =>
+    Boolean(page.mirrorMargins) === (key === 'mirrored') &&
+    (['top', 'bottom', 'left', 'right'] as const).every(side => Math.abs(page[side] - marginPresets[key][side]) < 0.005));
+}
+export function selectedMarginPreset(page: Project['page']): MarginPreset | 'custom' {
+  return page.customMargins ? 'custom' : matchingMarginPreset(page) ?? 'custom';
+}
 
 export const baseRun: Required<Run> = {font:'宋体',latinFont:'Times New Roman',size:12,color:'#202625',bold:false,italic:false,underline:'none',underlineColor:'#202625',shading:'#ffffff',outline:false,shadow:false,emboss:false,imprint:false,noProof:false,ligatures:'none',numForm:'default',numSpacing:'default',contextualAlternates:false,strike:'none',caps:false,smallCaps:false,script:'baseline',spacing:0,scale:100,position:0,kerning:0,highlight:'none',hidden:false,language:'zh-CN'};
 export const baseParagraph: Required<Paragraph> = {alignment:'both',left:0,right:0,firstLine:0,indentUnit:'cm',spacingUnit:'pt',beforeAuto:false,afterAuto:false,before:0,after:0,lineRule:'auto',line:1.5,contextualSpacing:false,keepNext:false,keepLines:false,pageBreakBefore:false,widowControl:true,suppressLineNumbers:false,suppressAutoHyphens:false,snapToGrid:false,overflowPunct:true,autoSpaceDE:true,autoSpaceDN:true,kinsoku:true,wordWrap:false,mirrorIndents:false,bidi:false,textAlignment:'auto',outlineLevel:9,shading:'#ffffff',borders:{},tabs:[]};
@@ -94,7 +113,7 @@ export function createList(name='新多级列表', kind:ListKind='multilevel'): 
 }
 export function createBlankProject(locale:Locale='zh'):Project {
   return {version:1,name:locale==='en'?'Untitled Project':'未命名方案',
-    page:{size:'A4',orientation:'portrait',top:2.54,bottom:2.54,left:2.54,right:2.54,header:1.27,footer:1.27,gutter:0,defaultTab:1.27},
+    page:{size:'A4',orientation:'portrait',...marginPresets.normal,mirrorMargins:false,customMargins:false,header:1.27,footer:1.27,gutter:0,defaultTab:1.27},
     styles:[{...createStyle('paragraph',locale==='en'?'Normal':'正文'),id:'Normal',next:'Normal',priority:0}],lists:[]};
 }
 export function createProject(locale:Locale='zh'): Project {

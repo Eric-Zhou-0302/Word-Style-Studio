@@ -263,7 +263,7 @@ export function buildParts(input: Project, options: ExportOptions = {}): Record<
   parts['word/styles.xml'] = stylesPart(project, options.sample ?? false, locale);
   parts['word/numbering.xml'] = numberingPart(project, pictures);
   parts['word/document.xml'] = documentPart(project, options.sample ?? false, locale);
-  parts['word/settings.xml'] = `${XML}<w:settings ${NS}><w:zoom w:percent="100"/>${val('defaultTabStop', cm(project.page.defaultTab))}<w:characterSpacingControl w:val="doNotCompress"/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>`;
+  parts['word/settings.xml'] = `${XML}<w:settings ${NS}><w:zoom w:percent="100"/>${val('defaultTabStop', cm(project.page.defaultTab))}${project.page.mirrorMargins?'<w:mirrorMargins/>':''}<w:characterSpacingControl w:val="doNotCompress"/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>`;
   parts['word/style-studio.json'] = JSON.stringify(project);
   const application = locale === 'en' ? 'Word Style Studio' : 'Word 样式工作室';
   const description = locale === 'en' ? `${options.sample ? 'Review samples' : 'Blank document'} with custom styles and dynamic multilevel lists` : `包含自定义样式与动态多级列表的${options.sample ? '验收样例' : '空白文档'}`;

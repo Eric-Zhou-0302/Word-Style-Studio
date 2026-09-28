@@ -472,10 +472,12 @@ function importedProject(files: Map<string, Uint8Array>, fileName: string, local
   if(width&&height){const landscape=attr(size,'orient')==='landscape'||width>height;project.page.orientation=landscape?'landscape':'portrait';const dims=[width,height].sort((a,b)=>a-b);const sizes=[['A4',11906,16838],['A5',8391,11906],['Letter',12240,15840]] as const;const match=sizes.find(([,w,h])=>Math.abs(w-dims[0])<40&&Math.abs(h-dims[1])<40);if(match)project.page.size=match[0];else reader.warn('源文档使用自定义纸张尺寸，已采用 A4；请检查页面设置。');}
   const margins=child(section,'pgMar');
   for(const key of ['top','bottom','left','right','gutter','header','footer'] as const){const value=number(attr(margins,key));if(value!==undefined){const valueCm=cm(value);if(valueCm>=0&&valueCm<=(key==='gutter'?5:10))project.page[key]=valueCm;else reader.warn(`页面 ${key} 边距超出支持范围，保留默认值。`);}}
+  const mirrorMargins=child(settings?.documentElement,'mirrorMargins');
+  project.page.mirrorMargins=!!mirrorMargins&&(attr(mirrorMargins,'val')===undefined||boolAttr(mirrorMargins,'val'));
   const defaultTab=number(val(settings?.documentElement,'defaultTabStop'));if(defaultTab!==undefined&&cm(defaultTab)>=0.1&&cm(defaultTab)<=10)project.page.defaultTab=cm(defaultTab);
   if(section){const ignored=children(section).filter(e=>!['pgSz','pgMar','type'].includes(e.localName));if(ignored.length)reader.warn(`页面设置 ${[...new Set(ignored.map(e=>e.localName))].join('、')} 未导入。`);}
   const pageSize=project.page.size==='A4'?[21,29.7]:project.page.size==='A5'?[14.8,21]:[21.59,27.94];if(project.page.orientation==='landscape')pageSize.reverse();
-  if(project.page.left+project.page.right+project.page.gutter>=pageSize[0]-1||project.page.top+project.page.bottom>=pageSize[1]-1){Object.assign(project.page,{top:2.54,bottom:2.54,left:2.54,right:2.54,gutter:0});reader.warn('导入页边距无法容纳正文，已恢复为 2.54 厘米。');}
+  if(project.page.left+project.page.right+project.page.gutter>=pageSize[0]-1||project.page.top+project.page.bottom>=pageSize[1]-1){Object.assign(project.page,{top:2.54,bottom:2.54,left:2.54,right:2.54,mirrorMargins:false,customMargins:false,gutter:0});reader.warn('导入页边距无法容纳正文，已恢复为 2.54 厘米。');}
   return {project:validateProject(project),warnings:[...reader.warnings]};
 }
 function boolAttr(e:Element,key:string){const value=attr(e,key);return value!==undefined&&!['0','false','off'].includes(value);}
