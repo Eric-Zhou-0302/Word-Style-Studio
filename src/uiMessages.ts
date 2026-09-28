@@ -57,7 +57,7 @@ export const uiMessages: Record<string, string> = {
   "工作区": "Workspace",
   "清空样式与列表": "Clear styles and lists",
   "清空样式与列表？": "Clear styles and lists?",
-  "将删除 {0} 个样式和 {1} 套列表。保留当前正文（Normal）；没有正文时创建基础正文。保留方案名称及页面设置。可通过撤销恢复。": "Delete {0} styles and {1} lists. Keep the current Normal style, or create one if missing. Keep the project name and page settings. You can undo this.",
+  "将删除 {0} 个样式和 {1} 套列表。若存在 Normal 样式则保留；若不存在则创建基础正文样式（Normal）。保留方案名称及页面设置。可通过撤销恢复。": "Delete {0} styles and {1} lists. Keep the Normal style if present; otherwise, create a basic Normal style. Keep the project name and page settings. You can undo this.",
   "确认清空": "Clear styles and lists",
   "已清空样式与列表，可撤销恢复": "Styles and lists cleared. You can undo this.",
   "收起左侧栏": "Collapse sidebar",
