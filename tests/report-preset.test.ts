@@ -5,13 +5,13 @@ import {buildParts,exportDocument} from '../src/export';
 import {importWord} from '../src/import';
 import {levelLabel,simulateList} from '../src/numbering';
 
-const names=['报告标题','报告副标题','落款','目录标题','目录一级','目录二级','目录三级','一级标题','二级标题','三级标题','四级标题','五级标题','六级标题','报告正文','报告正文无缩进','正文编号一级','正文编号二级','正文项目符号','表题','图题','独立图表段','资料来源','脚注','表格表头','表格表体居中','表格表体左对齐','表格表体右对齐','表格表尾','标准表格'];
+const names=['报告标题','报告副标题','落款','目录标题','目录一级','目录二级','目录三级','一级标题','二级标题','三级标题','四级标题','五级标题','六级标题','报告正文','报告正文无缩进','正文编号一级','正文编号二级','正文项目符号','表题','图题','独立图表段','资料来源','脚注','表格表头','表格表体居中','表格表体左对齐','表格表体右对齐','表格表尾','表题（自动编号）','图题（自动编号）','标准表格'];
 test('English presets localize project, style and list names while preserving report formatting and bindings',()=>{
  const zh=validateProject(createProject('zh'));const en=validateProject(createProject('en'));
  assert.equal(en.name,'General Report Styles');
- assert.deepEqual(en.styles.map(s=>s.name),['Report Title','Report Subtitle','Signature','Contents Heading','TOC 1','TOC 2','TOC 3','Heading 1','Heading 2','Heading 3','Heading 4','Heading 5','Heading 6','Report Body','Report Body No Indent','Body Numbering 1','Body Numbering 2','Body Bullet','Table Caption','Figure Caption','Figure Paragraph','Source','Footnote Text','Table Header','Table Body Center','Table Body Left','Table Body Right','Table Footer','Standard Table']);
- assert.deepEqual(en.lists.map(l=>l.name),['Heading Numbering','Body Numbering','Body Bullets']);
- assert.deepEqual({...en,name:zh.name,styles:en.styles.map((s,i)=>({...s,name:zh.styles[i].name})),lists:en.lists.map((l,i)=>({...l,name:zh.lists[i].name}))},zh);
+ assert.deepEqual(en.styles.map(s=>s.name),['Report Title','Report Subtitle','Signature','Contents Heading','TOC 1','TOC 2','TOC 3','Heading 1','Heading 2','Heading 3','Heading 4','Heading 5','Heading 6','Report Body','Report Body No Indent','Body Numbering 1','Body Numbering 2','Body Bullet','Table Caption','Figure Caption','Figure Paragraph','Source','Footnote Text','Table Header','Table Body Center','Table Body Left','Table Body Right','Table Footer','Table Caption (Numbered)','Figure Caption (Numbered)','Standard Table']);
+ assert.deepEqual(en.lists.map(l=>l.name),['Heading Numbering','Body Numbering','Body Bullets','Table Caption Numbering','Figure Caption Numbering']);
+ assert.deepEqual({...en,name:zh.name,styles:en.styles.map((s,i)=>({...s,name:zh.styles[i].name})),lists:en.lists.map((l,i)=>({...l,name:zh.lists[i].name,levels:l.levels.map((level,j)=>({...level,text:zh.lists[i].levels[j].text}))}))},zh);
  assert.deepEqual(createProject().styles.map(s=>s.name),names);
  const parts=buildParts(en);const xml=String(parts['word/styles.xml']);
  for(const item of [...en.styles,...en.lists])assert.ok(xml.includes(`<w:name w:val="${item.name}"/>`),item.name);
@@ -37,12 +37,12 @@ test('blank project contains only an independent Normal and exports no report or
  assert.doesNotMatch(String(parts['word/numbering.xml']),/<w:abstractNum[ >]|<w:num[ >]/);
  p.styles[0].run.size=30;assert.deepEqual(createBlankProject().styles[0].run,{});
 });
-test('report preset matches all 29 named styles, font substitutions, sizes and paragraph rules',()=>{
- const p=validateProject(createProject());assert.equal(p.styles.length,29);assert.ok(p.styles.every(s=>s.id!=='Normal'&&!s.basedOn));
+test('report preset matches all 31 named styles, font substitutions, sizes and paragraph rules',()=>{
+ const p=validateProject(createProject());assert.equal(p.styles.length,31);assert.ok(p.styles.every(s=>s.id!=='Normal'&&!s.basedOn));
  assert.deepEqual(p.styles.map(s=>s.name),names);
- const sizes=[26,16,16,18,16,15,14,16,15,14,14,14,14,14,14,14,14,14,10.5,10.5,10.5,10.5,10.5,12,12,12,12,12];
- const bold=new Set([0,2,3,4,5,6,7,8,9,18,19,23,27]);
- const center=new Set([0,1,3,18,19,20,23,24,27]);
+ const sizes=[26,16,16,18,16,15,14,16,15,14,14,14,14,14,14,14,14,14,10.5,10.5,10.5,10.5,10.5,12,12,12,12,12,10.5,10.5];
+ const bold=new Set([0,2,3,4,5,6,7,8,9,18,19,23,27,28,29]);
+ const center=new Set([0,1,3,18,19,20,23,24,27,28,29]);
  const left=new Set([4,5,6,7,8,9,10,11,12,21,22,25]);
  p.styles.slice(0,-1).forEach((s,i)=>{
   assert.equal(s.type,'paragraph');const r=resolveStyle(p,s);
@@ -51,8 +51,8 @@ test('report preset matches all 29 named styles, font substitutions, sizes and p
   assert.equal(r.run.bold,bold.has(i),s.name);assert.equal(r.run.color,i===21?'#595959':'#000000');
   assert.equal(r.paragraph.alignment,center.has(i)?'center':[2,26].includes(i)?'right':left.has(i)?'left':'both');
   assert.equal(r.paragraph.line,i<2?1.5:i===2?1.15:1);
-  assert.equal(r.paragraph.before,i===7?12:i===8?8:[9,18,19].includes(i)?5:0);
-  assert.equal(r.paragraph.after,i===7?12:i===8?8:[9,18,19,21].includes(i)?5:0);
+  assert.equal(r.paragraph.before,i===20?6:i===7?12:i===8?8:[9,18,19,28,29].includes(i)?5:0);
+  assert.equal(r.paragraph.after,i===20?6:i===7?12:i===8?8:[9,18,19,21,28,29].includes(i)?5:0);
   assert.equal(r.paragraph.keepLines,true);assert.equal(s.quickFormat,true);
  });
  const body=resolveStyle(p,p.styles.find(s=>s.id==='ReportBody')!);
@@ -61,10 +61,10 @@ test('report preset matches all 29 named styles, font substitutions, sizes and p
  assert.equal(p.styles.find(s=>s.id==='StandardTable')?.basedOn,undefined);
  assert.deepEqual(p.styles.find(s=>s.id==='StandardTable')?.run,{});
  assert.deepEqual(p.styles.find(s=>s.id==='StandardTable')?.table?.regions,{});
- assert.equal(p.styles.filter(s=>s.quickFormat).length,29);
+ assert.equal(p.styles.filter(s=>s.quickFormat).length,31);
 });
 test('preset lists use distinct heading/body bindings and exact marker positions',()=>{
- const p=createProject();assert.equal(p.lists.length,3);
+ const p=createProject();assert.equal(p.lists.length,5);
  const [h,n,b]=p.lists;
  assert.deepEqual(h.levels.slice(0,6).map((_,i)=>levelLabel(h,i)),['一、','（一）','1.','（1）','A.','a.']);
  assert.deepEqual(h.levels.slice(0,6).map(l=>l.follow),['nothing','nothing','tab','nothing','nothing','nothing']);
@@ -89,7 +89,7 @@ test('report native XML has exact page distances, four table margins and clean s
  const restored=importWord(exportDocument(p)).project;assert.deepEqual(restored,JSON.parse(JSON.stringify(p)));
 });
 
-test('report preset keeps Normal internal to export and retains 29 independent styles on round trip',async()=>{
+test('report preset keeps Normal internal to export and retains 31 independent styles on round trip',async()=>{
  const p=createProject();
  const parts=buildParts(p,{sample:true});
  const xml=String(parts['word/styles.xml']);
@@ -97,4 +97,19 @@ test('report preset keeps Normal internal to export and retains 29 independent s
  assert.doesNotMatch(xml,/<w:basedOn w:val="Normal"/);
  const result=await importWord(exportDocument(p,{sample:true}));
  assert.deepEqual(result.project.styles,JSON.parse(JSON.stringify(p.styles)));
+});
+
+test('numbered captions have independent counters and reciprocal OOXML bindings while plain captions stay unnumbered',()=>{
+ const p=createProject();const parts=buildParts(p);const styles=String(parts['word/styles.xml']);const numbering=String(parts['word/numbering.xml']);
+ for(const [kind,prefix] of [['Table','表'],['Figure','图']]){
+  const list=p.lists.find(l=>l.id===kind+'CaptionNumbering')!;
+  assert.deepEqual(simulateList(list,[0,0]).map(v=>v.label),[prefix+'1：',prefix+'2：']);
+  const id=kind+'CaptionNumbered';
+  const xml=styles.match(new RegExp(`<w:style[^>]+w:styleId="${id}">([\\s\\S]*?)</w:style>`))![1];
+  assert.match(xml,/<w:numPr>/);assert.ok(numbering.includes(`<w:pStyle w:val="${id}"/>`));
+  const plain=styles.match(new RegExp(`<w:style[^>]+w:styleId="${kind}Caption">([\\s\\S]*?)</w:style>`))![1];
+  assert.match(plain,/<w:numId w:val="0"\/>/);
+ }
+ const figure=styles.match(/<w:style[^>]+w:styleId="FigureParagraph">([\s\S]*?)<\/w:style>/)![1];
+ assert.match(figure,/w:before="120"/);assert.match(figure,/w:after="120"/);
 });

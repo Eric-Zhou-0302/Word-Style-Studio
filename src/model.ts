@@ -138,7 +138,7 @@ export function createProject(locale:Locale='zh'): Project {
     paragraph('BodyBullet',name('正文项目符号','Body Bullet'),{}, {left:1.73,firstLine:-.74},'BodyBullet'),
     paragraph('TableCaption',name('表题','Table Caption'),{size:10.5,bold:true},{...centered,before:5,after:5,keepNext:true}),
     paragraph('FigureCaption',name('图题','Figure Caption'),{size:10.5,bold:true},{...centered,before:5,after:5,keepNext:true}),
-    paragraph('FigureParagraph',name('独立图表段','Figure Paragraph'),{size:10.5},centered),
+    paragraph('FigureParagraph',name('独立图表段','Figure Paragraph'),{size:10.5},{...centered,before:6,after:6}),
     paragraph('Source',name('资料来源','Source'),{size:10.5,color:'#595959'},{alignment:'left',after:5}),
     paragraph('FootnoteText',name('脚注','Footnote Text'),{size:10.5},{alignment:'left'}),
     paragraph('TableHeader',name('表格表头','Table Header'),{size:12,bold:true},centered,'TableHeader'),
@@ -148,6 +148,16 @@ export function createProject(locale:Locale='zh'): Project {
     paragraph('TableFooter',name('表格表尾','Table Footer'),{size:12,bold:true},centered,'TableFooter'),
     {...createStyle('table',name('标准表格','Standard Table')),id:'StandardTable',run:{},paragraph:{},table:{...structuredClone(tableDefault),cellMargin:.14,cellMargins:{top:.14,bottom:.14,left:.18,right:.18},border:{style:'single',color:'#000000',width:.5,space:0},shading:'#ffffff',verticalAlign:'center',regions:{}}},
   ];
+  const captions=(['Table','Figure'] as const).map(kind=>{
+    const styleId=kind+'CaptionNumbered';
+    const isTable=kind==='Table';
+    rows.splice(rows.length-1,0,paragraph(styleId,name(isTable?'表题（自动编号）':'图题（自动编号）',isTable?'Table Caption (Numbered)':'Figure Caption (Numbered)'),{size:10.5,bold:true},{...centered,before:5,after:5,keepNext:true},'FigureParagraph'));
+    // 表和图分别计数，原有不编号题注保持独立。
+    const list=createList(name(isTable?'表题编号':'图题编号',isTable?'Table Caption Numbering':'Figure Caption Numbering'),'numbered');
+    list.id=kind+'CaptionNumbering';
+    Object.assign(list.levels[0],{text:name(isTable?'表%1：':'图%1：',isTable?'Table %1: ':'Figure %1: '),linkedStyle:styleId,indent:0,hanging:0,tabPosition:0,follow:'nothing'});
+    return list;
+  });
   rows.forEach((style,i)=>style.priority=i+1);
   const headings=createList(name('标题层级','Heading Numbering'));headings.id='Headings';
   const formats:Level['format'][]=['chineseCounting','chineseCounting','decimal','decimal','upperLetter','lowerLetter'];
@@ -157,7 +167,7 @@ export function createProject(locale:Locale='zh'): Project {
   body.levels.slice(0,2).forEach((l,i)=>Object.assign(l,{text:i===0?'%1、':'（%2）',linkedStyle:'BodyNumber'+(i+1),indent:i===0?1.73:2.47,hanging:.74,tabPosition:i===0?1.73:2.47,follow:'nothing'}));
   const bullets=createList(name('正文项目符号','Body Bullets'),'bullet');bullets.id='BodyBullets';
   Object.assign(bullets.levels[0],{text:'•',linkedStyle:'BodyBullet',indent:1.73,hanging:.74,tabPosition:1.73,follow:'tab',run:{color:'#000000'}});
-  return {version:1,name:name('通用报告样式方案','General Report Styles'),page:{size:'A4',orientation:'portrait',top:2.75,bottom:2.75,left:2.5,right:2.5,header:1.5,footer:1.5,gutter:0,defaultTab:1.27},styles:rows,lists:[headings,body,bullets]};
+  return {version:1,name:name('通用报告样式方案','General Report Styles'),page:{size:'A4',orientation:'portrait',top:2.75,bottom:2.75,left:2.5,right:2.5,header:1.5,footer:1.5,gutter:0,defaultTab:1.27},styles:rows,lists:[headings,body,bullets,...captions]};
 }
 
 export function styleChain(project: Project, style: Style): Style[] {
