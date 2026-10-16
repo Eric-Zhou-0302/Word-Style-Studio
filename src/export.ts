@@ -73,9 +73,8 @@ function paragraphProperties(p: Paragraph, inherited: Paragraph = baseParagraph,
   for (const key of ['before', 'after'] as const) {
     const amount = p[key] ?? (p.spacingUnit !== undefined ? effective[key] : undefined);
     if (amount !== undefined) {
-      // 清掉互斥单位，避免父样式中的字符/行单位优先级覆盖当前值。
-      spacing[`w:${key}`] = effective.spacingUnit === 'line' ? 0 : pt(amount);
-      spacing[`w:${key}Lines`] = effective.spacingUnit === 'line' ? Math.round(amount * 100) : 0;
+      // 只输出有效单位，零值也具有优先级，不能用来删除另一单位。
+      spacing[`w:${key}${effective.spacingUnit === 'line' ? 'Lines' : ''}`] = effective.spacingUnit === 'line' ? Math.round(amount * 100) : pt(amount);
     }
     if (p[`${key}Auto`] !== undefined) spacing[`w:${key}Autospacing`] = p[`${key}Auto`] ? 1 : 0;
   }
@@ -90,12 +89,10 @@ function paragraphProperties(p: Paragraph, inherited: Paragraph = baseParagraph,
     if (amount === undefined) continue;
     if (key === 'firstLine') {
       const direction = amount < 0 ? 'hanging' : 'firstLine';
-      // firstLine 与 hanging 不能同时出现，否则 hanging 会压过首行缩进。
-      indent['w:firstLineChars'] = 0; indent['w:hangingChars'] = 0;
+      // 首行与悬挂的互斥规则也适用于字符单位；即使 hangingChars 为 0，也不能与 firstLineChars 一起输出。
       indent[`w:${direction}${effective.indentUnit === 'char' ? 'Chars' : ''}`] = effective.indentUnit === 'char' ? Math.round(Math.abs(amount) * 100) : cm(Math.abs(amount));
     } else {
-      indent[`w:${key}`] = effective.indentUnit === 'char' ? 0 : cm(amount);
-      indent[`w:${key}Chars`] = effective.indentUnit === 'char' ? Math.round(amount * 100) : 0;
+      indent[`w:${key}${effective.indentUnit === 'char' ? 'Chars' : ''}`] = effective.indentUnit === 'char' ? Math.round(amount * 100) : cm(amount);
     }
   }
   if (Object.keys(indent).length) xml += leaf('w:ind', indent);
@@ -129,7 +126,40 @@ function sampleTableStyleId(project: Project): string {
   const ids = new Set([...project.styles.flatMap(s => [s.id, s.id + 'Char']), ...project.lists.map(l => l.id)]);
   let id = 'StudioTableSample'; while (ids.has(id)) id += '_'; return id;
 }
+const indentKeys = ['left','right','firstLine','indentUnit'] as const;
+const spacingKeys = ['before','after','spacingUnit','beforeAuto','afterAuto'] as const;
+
+// 换单位或缩进方向时，省略 XML 属性不会删除祖先属性。
+// 为该子样式建立隐藏的继承链副本，剥离冲突组，再在子样式写入整组有效值。
+function exportStyleProject(source: Project): Project {
+  const project=structuredClone(source);
+  const used=new Set([...source.styles.map(s=>s.id),...source.lists.map(l=>l.id)]);
+  for(const style of project.styles.slice()){
+    const parent=source.styles.find(s=>s.id===style.basedOn);
+    if(!parent)continue;
+    const inherited=resolveStyle(source,parent).paragraph;
+    const effective=resolveStyle(source,source.styles.find(s=>s.id===style.id)!).paragraph;
+    const ind=effective.indentUnit!==inherited.indentUnit || (effective.firstLine<0)!==(inherited.firstLine<0);
+    const spacing=effective.spacingUnit!==inherited.spacingUnit;
+    if(!ind&&!spacing)continue;
+    const keys=[...(ind?indentKeys:[]),...(spacing?spacingKeys:[])];
+    const copyBase=(original:Style):string=>{
+      let id=style.id+'ExportBase'+original.id;while(used.has(id))id+='_';used.add(id);
+      const copy=structuredClone(original);copy.id=id;copy.name=id;copy.type=original.type==='linked'?'paragraph':original.type;
+      copy.quickFormat=false;copy.hidden=true;copy.unhideWhenUsed=false;copy.next=undefined;
+      for(const key of keys)delete copy.paragraph[key];
+      const ancestor=source.styles.find(s=>s.id===original.basedOn);
+      copy.basedOn=ancestor?copyBase(ancestor):undefined;
+      project.styles.push(copy);return id;
+    };
+    style.basedOn=copyBase(parent);
+    for(const key of keys)Object.assign(style.paragraph,{[key]:effective[key]});
+  }
+  return project;
+}
+
 function stylesPart(project: Project, sample = false, locale: Locale = 'zh'): string {
+  project=exportStyleProject(project);
   let xml = wrap('docDefaults', wrap('rPrDefault', runProperties({ ...baseRun, shading: undefined }, baseRun, false, true)) + wrap('pPrDefault', paragraphProperties({ ...baseParagraph, shading: undefined })));
   if (!project.styles.some(s=>s.id==='Normal')) xml += '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:semiHidden/></w:style>';
   if (sample) xml += `<w:style w:type="paragraph" w:customStyle="1" w:styleId="${sampleTableStyleId(project)}">${val('name', locale === 'en' ? 'Table Sample Text' : '表格示例正文')}<w:semiHidden/></w:style>`;

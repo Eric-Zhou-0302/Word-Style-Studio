@@ -214,14 +214,14 @@ class WordReader {
     const indent = child(e,'ind');
     if (indent) {
       const charKeys = ['leftChars','startChars','rightChars','endChars','firstLineChars','hangingChars'];
-      const char = charKeys.some(k => (number(attr(indent,k))??0)!==0) || (!['left','start','right','end','firstLine','hanging'].some(k=>attr(indent,k)!==undefined) && charKeys.some(k=>attr(indent,k)!==undefined));
+      const char = charKeys.some(k => attr(indent,k)!==undefined);
       p.indentUnit = char ? 'char' : 'cm';
       const convert = (v: number) => char ? v / 100 : cm(v);
       const read = (...keys: string[]) => keys.map(k => number(attr(indent,k))).find(v => v !== undefined);
       const left = read(...(char ? ['startChars','leftChars'] : ['start','left'])), right = read(...(char ? ['endChars','rightChars'] : ['end','right']));
       const first = read(char ? 'firstLineChars':'firstLine'), hanging = read(char ? 'hangingChars':'hanging');
       if (left !== undefined) p.left = convert(left); if (right !== undefined) p.right = convert(right);
-      if (hanging !== undefined && hanging !== 0) p.firstLine = -convert(hanging); else if (first !== undefined) p.firstLine = convert(first); else if (hanging !== undefined) p.firstLine = 0;
+      if (hanging !== undefined) p.firstLine = -convert(hanging) || 0; else if (first !== undefined) p.firstLine = convert(first);
       if (char && ((left === undefined && read('start','left') !== undefined) || (right === undefined && read('end','right') !== undefined) || (first === undefined && hanging === undefined && read('firstLine','hanging') !== undefined))) this.warn(`${context}：混合字符和厘米缩进仅保留字符单位部分。`);
     }
     const spacing = child(e,'spacing');
@@ -421,7 +421,7 @@ function importedProject(files: Map<string, Uint8Array>, fileName: string, local
     const props=child(node,'pPr'),ind=child(props,'ind');
     const left=number(attr(ind,'start')??attr(ind,'left')),hanging=number(attr(ind,'hanging')),firstLine=number(attr(ind,'firstLine'));
     if(left!==undefined&&cm(left)>=0&&cm(left)<=55)result.indent=cm(left);
-    if(hanging!==undefined&&hanging!==0&&cm(hanging)>=-20&&cm(hanging)<=55)result.hanging=cm(hanging);else if(firstLine!==undefined&&-cm(firstLine)>=-20&&-cm(firstLine)<=55)result.hanging=-cm(firstLine);else if(hanging===0)result.hanging=0;
+    if(hanging!==undefined&&cm(hanging)>=-20&&cm(hanging)<=55)result.hanging=cm(hanging);else if(firstLine!==undefined&&-cm(firstLine)>=-20&&-cm(firstLine)<=55)result.hanging=-cm(firstLine);else if(hanging===0)result.hanging=0;
     if(ind&&['leftChars','startChars','hangingChars','firstLineChars'].some(k=>attr(ind,k)!==undefined))reader.warn(`${context}：列表层级的字符单位缩进未导入，保留厘米缩进。`);
     const tabs=children(child(props,'tabs'),'tab'),tab=tabs.find(t=>attr(t)==='num')??tabs.find(t=>attr(t)!=='clear');
     const pos=number(attr(tab,'pos'));if(pos!==undefined&&cm(pos)>=0&&cm(pos)<=55)result.tabPosition=cm(pos);else if(left!==undefined)result.tabPosition=result.indent;

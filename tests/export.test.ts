@@ -172,7 +172,8 @@ test('first-line indentation does not also emit a hanging value that cancels it'
   project.styles[1].paragraph = { firstLine: 1, indentUnit: 'cm' };
   const styles = styleXml(xml(buildParts(project), 'word/styles.xml'), 'Heading1');
   assert.match(styles, /w:firstLine="567"/);
-  assert.doesNotMatch(styles, /w:hanging="/);
+  assert.doesNotMatch(styles, /w:hanging(?:Chars)?="/);
+  assert.doesNotMatch(styles, /w:firstLineChars="/);
 });
 
 test('table and conditional table booleans are absolute Word properties, not style toggles', () => {
@@ -287,4 +288,34 @@ test('export language preserves user names, numbering and truly blank documents'
   assert.equal(xml(en, 'word/style-studio.json'), xml(zh, 'word/style-studio.json'));
   assert.equal(xml(buildParts(project, {locale: 'en'}), 'word/document.xml'), xml(buildParts(project), 'word/document.xml'));
   assert.doesNotMatch(xml(buildParts(project, {locale: 'en'}), 'word/document.xml'), /<w:t\b/);
+});
+
+ test('first-line and hanging indentation emit only the selected direction and unit',()=>{
+  for(const unit of ['char','cm'] as const)for(const amount of [2,-2,0]){
+   const project=createProject();project.styles[1].paragraph={firstLine:amount,indentUnit:unit};
+   const content=styleXml(xml(buildParts(project),'word/styles.xml'),project.styles[1].id);
+   const attrs=Array.from(content.matchAll(/w:(firstLine|hanging)(Chars)?="([^"]*)"/g));
+   assert.equal(attrs.length,1);assert.equal(attrs[0][1],amount<0?'hanging':'firstLine');
+   assert.equal(attrs[0][2]??'',unit==='char'?'Chars':'');
+   assert.equal(Number(attrs[0][3]),unit==='char'?Math.abs(amount)*100:Math.round(Math.abs(amount)*1440/2.54));
+  }
+ });
+
+test('paragraph distance properties never emit a zero in a competing unit',()=>{
+ for(const char of [false,true]){
+  const p=createProject();p.styles[1].paragraph={indentUnit:char?'char':'cm',left:2,right:1,firstLine:2,spacingUnit:char?'line':'pt',before:6,after:6};
+  const content=styleXml(xml(buildParts(p),'word/styles.xml'),p.styles[1].id);
+  assert.doesNotMatch(content,char?/w:(left|right|firstLine|before|after)="/:/w:(leftChars|rightChars|firstLineChars|beforeLines|afterLines)="/);
+ }
+});
+
+test('unit-changing children use isolated export bases without mutating the project',()=>{
+ const p=createProject();p.styles[0].paragraph={indentUnit:'char',left:2,firstLine:-2,spacingUnit:'line',before:1};
+ p.styles[1].basedOn=p.styles[0].id;p.styles[1].paragraph={indentUnit:'cm',firstLine:1,spacingUnit:'pt',before:6};
+ const original=JSON.stringify(p);const content=xml(buildParts(p),'word/styles.xml');
+ const child=styleXml(content,p.styles[1].id);const base=child.match(/<w:basedOn w:val="([^"]+)"/)!;
+ assert.notEqual(base[1],p.styles[0].id);
+ assert.doesNotMatch(styleXml(content,base[1]),/<w:ind|<w:spacing/);
+ assert.match(child,/w:before="120"/);assert.doesNotMatch(child,/w:beforeLines|w:hanging/);
+ assert.equal(JSON.stringify(p),original);
 });

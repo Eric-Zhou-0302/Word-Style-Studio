@@ -133,8 +133,8 @@ export function createProject(locale:Locale='zh'): Project {
     ...[0,1,2,3,4,5].map(i=>paragraph('Heading'+(i+1),name(['一级标题','二级标题','三级标题','四级标题','五级标题','六级标题'][i],`Heading ${i+1}`),{font:i===0?'黑体':'楷体',size:[16,15,14,14,14,14][i],bold:i<3},{alignment:'left',before:[12,8,5,0,0,0][i],after:[12,8,5,0,0,0][i],outlineLevel:i,keepNext:true,left:i<2?0:1.73,firstLine:i<2?0:-.74})),
     paragraph('ReportBody',name('报告正文','Report Body'),{}, {indentUnit:'char',firstLine:2}),
     paragraph('ReportBodyPlain',name('报告正文无缩进','Report Body No Indent')),
-    paragraph('BodyNumber1',name('正文编号一级','Body Numbering 1'),{}, {left:1.73,firstLine:-.74},'BodyNumber1'),
-    paragraph('BodyNumber2',name('正文编号二级','Body Numbering 2'),{}, {left:2.47,firstLine:-.74},'BodyNumber2'),
+    paragraph('BodyNumber1',name('正文编号一级','Body Numbering 1'),{}, {left:.74,firstLine:-.74},'BodyNumber1'),
+    paragraph('BodyNumber2',name('正文编号二级','Body Numbering 2'),{}, {left:1.48,firstLine:-.74},'BodyNumber2'),
     paragraph('BodyBullet',name('正文项目符号','Body Bullet'),{}, {left:1.73,firstLine:-.74},'BodyBullet'),
     paragraph('TableCaption',name('表题','Table Caption'),{size:10.5,bold:true},{...centered,before:5,after:5,keepNext:true}),
     paragraph('FigureCaption',name('图题','Figure Caption'),{size:10.5,bold:true},{...centered,before:5,after:5,keepNext:true}),
@@ -164,7 +164,7 @@ export function createProject(locale:Locale='zh'): Project {
   const texts=['%1、','（%2）','%3.','（%4）','%5.','%6.'];
   headings.levels.forEach((l,i)=>{if(i<6)Object.assign(l,{format:formats[i],text:texts[i],linkedStyle:'Heading'+(i+1),indent:i<2?0:1.73,hanging:i<2?0:.74,tabPosition:i<2?0:1.73,follow:i===2?'tab':'nothing'});});
   const body=createList(name('正文编号','Body Numbering'));body.id='BodyNumbering';
-  body.levels.slice(0,2).forEach((l,i)=>Object.assign(l,{text:i===0?'%1、':'（%2）',linkedStyle:'BodyNumber'+(i+1),indent:i===0?1.73:2.47,hanging:.74,tabPosition:i===0?1.73:2.47,follow:'nothing'}));
+  body.levels.slice(0,2).forEach((l,i)=>Object.assign(l,{text:i===0?'%1、':'（%2）',linkedStyle:'BodyNumber'+(i+1),indent:i===0?.74:1.48,hanging:.74,tabPosition:i===0?.74:1.48,follow:'nothing'}));
   const bullets=createList(name('正文项目符号','Body Bullets'),'bullet');bullets.id='BodyBullets';
   Object.assign(bullets.levels[0],{text:'•',linkedStyle:'BodyBullet',indent:1.73,hanging:.74,tabPosition:1.73,follow:'tab',run:{color:'#000000'}});
   return {version:1,name:name('通用报告样式方案','General Report Styles'),page:{size:'A4',orientation:'portrait',top:2.75,bottom:2.75,left:2.5,right:2.5,header:1.5,footer:1.5,gutter:0,defaultTab:1.27},styles:rows,lists:[headings,body,bullets,...captions]};

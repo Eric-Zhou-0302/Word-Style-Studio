@@ -69,7 +69,7 @@ test('preset lists use distinct heading/body bindings and exact marker positions
  assert.deepEqual(h.levels.slice(0,6).map((_,i)=>levelLabel(h,i)),['一、','（一）','1.','（1）','A.','a.']);
  assert.deepEqual(h.levels.slice(0,6).map(l=>l.follow),['nothing','nothing','tab','nothing','nothing','nothing']);
  assert.deepEqual(h.levels.slice(0,6).map(l=>Number((l.indent-l.hanging).toFixed(2))),[0,0,.99,.99,.99,.99]);
- assert.deepEqual(n.levels.slice(0,2).map(l=>l.indent),[1.73,2.47]);
+ assert.deepEqual(n.levels.slice(0,2).map(l=>l.indent),[.74,1.48]);
  assert.deepEqual(simulateList(n,[0,1,1,0,1]).map(v=>v.label),['1、','（1）','（2）','2、','（1）']);
  assert.equal(levelLabel(b,0),'•');assert.equal(b.levels[0].follow,'tab');
 });
@@ -84,7 +84,9 @@ test('report native XML has exact page distances, four table margins and clean s
  assert.match(table,/<w:left w:w="102"/);assert.match(table,/<w:right w:w="102"/);
  assert.match(table,/<w:vAlign w:val="center"/);assert.doesNotMatch(table,/<w:rPr>/);
  assert.doesNotMatch(styles,/TableNormal|Normal Table/);
- assert.match(styles,/w:firstLineChars="200"/);
+ const bodyXml=styles.match(/<w:style[^>]+w:styleId="ReportBody">([\s\S]*?)<\/w:style>/)![1];
+ assert.match(bodyXml,/w:firstLineChars="200"/);
+ assert.doesNotMatch(bodyXml,/w:hanging(?:Chars)?=/);
  assert.doesNotMatch(String(parts['word/numbering.xml']),/w:lvlRestart w:val="8"/);
  const restored=importWord(exportDocument(p)).project;assert.deepEqual(restored,JSON.parse(JSON.stringify(p)));
 });
