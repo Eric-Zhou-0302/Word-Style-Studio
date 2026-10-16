@@ -320,7 +320,7 @@ test('unit-changing children use isolated export bases without mutating the proj
  assert.equal(JSON.stringify(p),original);
 });
 
-test('recommended styles follow the website order and exclude generated styles and lists',()=>{
+test('recommended styles follow the website order and exclude only generated helper styles',()=>{
  const project=createProject();project.styles.reverse();project.styles.forEach(s=>s.priority=42);
  const before=JSON.stringify(project);
  for(const sample of [false,true]){
@@ -329,8 +329,21 @@ test('recommended styles follow the website order and exclude generated styles a
   assert.match(settings,/w:visibleStyles="1"/);assert.match(settings,/w:latentStyles="0"/);
   assert.match(styles,/<w:latentStyles[^>]*w:defSemiHidden="1"[^>]*w:defUnhideWhenUsed="0"[^>]*w:defQFormat="0"/);
   project.styles.forEach((s,i)=>assert.ok(styleXml(styles,s.id).includes(`<w:uiPriority w:val="${i+1}"/>`)));
-  for(const list of project.lists){const body=styleXml(styles,list.id);assert.match(body,/<w:hidden\/>/);assert.doesNotMatch(body,/<w:qFormat/);}
+  for(const list of project.lists){const body=styleXml(styles,list.id);assert.doesNotMatch(body,/<w:hidden|<w:semiHidden\/>/);assert.match(body,/<w:qFormat\/>/);}
   for(const style of project.styles.filter(s=>s.type==='linked')){const body=styleXml(styles,style.id+'Char');assert.match(body,/<w:hidden\/>/);assert.doesNotMatch(body,/<w:qFormat|<w:unhideWhenUsed\/>/);}
  }
  assert.equal(JSON.stringify(project),before);
 });
+
+ test('list priorities follow sidebar grouping without changing numbering IDs',()=>{
+  const p=createProject();
+  const numbered=createList('Numbered','numbered'),bullet=createList('Bullet','bullet'),multi=createList('Multilevel');
+  p.lists=[numbered,multi,bullet];
+  const parts=buildParts(p);const styles=xml(parts,'word/styles.xml');
+  for(const [i,list] of [multi,bullet,numbered].entries()){
+   const content=styleXml(styles,list.id);
+   assert.ok(content.includes(`<w:uiPriority w:val="${p.styles.length+i+1}"/>`));
+   assert.ok(content.includes(`<w:numId w:val="${p.lists.indexOf(list)+1}"/>`));
+   assert.match(content,/<w:qFormat\/>/);assert.doesNotMatch(content,/<w:hidden\/>|<w:semiHidden\/>/);
+  }
+ });

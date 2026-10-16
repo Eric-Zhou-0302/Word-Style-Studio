@@ -1,5 +1,5 @@
 import { strToU8, zipSync } from 'fflate';
-import { baseParagraph, baseRun, paragraphStyle, regionNames, resolveStyle, validateProject } from './model';
+import { baseParagraph, baseRun, listKind, paragraphStyle, regionNames, resolveStyle, validateProject } from './model';
 import type { Border, Borders, Level, Paragraph, Project, Run, Style, Table } from './model';
 import type { Locale } from './i18n';
 
@@ -161,6 +161,9 @@ function exportStyleProject(source: Project): Project {
 
 function stylesPart(project: Project, sample = false, locale: Locale = 'zh'): string {
   const order=new Map(project.styles.map((style,index)=>[style.id,index+1]));
+  // 仅调整显示优先级；编号 ID 仍按原数组分配，避免破坏绑定。
+  const visibleLists=(['multilevel','bullet','numbered'] as const).flatMap(kind=>project.lists.filter(list=>listKind(list)===kind));
+  visibleLists.forEach((list,index)=>order.set(list.id,project.styles.length+index+1));
   project=exportStyleProject(project);
   let xml = wrap('docDefaults', wrap('rPrDefault', runProperties({ ...baseRun, shading: undefined }, baseRun, false, true)) + wrap('pPrDefault', paragraphProperties({ ...baseParagraph, shading: undefined })));
   xml += '<w:latentStyles w:defLockedState="0" w:defUIPriority="99" w:defSemiHidden="1" w:defUnhideWhenUsed="0" w:defQFormat="0"/>';
@@ -202,7 +205,7 @@ function stylesPart(project: Project, sample = false, locale: Locale = 'zh'): st
   }
   project.lists.forEach((list, index) => {
     // ilvl 只表示命名样式的应用层级，不保证所有 Word 版本画廊的缩略图选层。
-    xml += `<w:style w:type="numbering" w:customStyle="1" w:styleId="${escape(list.id)}">${val('name', list.name)}<w:hidden/><w:semiHidden/><w:unhideWhenUsed w:val="0"/>${wrap('pPr', numPr(index + 1, list.galleryLevel ?? 0))}</w:style>`;
+    xml += `<w:style w:type="numbering" w:customStyle="1" w:styleId="${escape(list.id)}">${val('name', list.name)}${val('uiPriority',order.get(list.id))}<w:semiHidden w:val="0"/><w:unhideWhenUsed w:val="0"/><w:qFormat/>${wrap('pPr', numPr(index + 1, list.galleryLevel ?? 0))}</w:style>`;
   });
   return `${XML}<w:styles ${NS}>${xml}</w:styles>`;
 }
