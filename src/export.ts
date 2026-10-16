@@ -114,10 +114,11 @@ function numPr(numId: number, level?: number): string {
   return wrap('numPr', val('ilvl', level) + val('numId', numId));
 }
 function styleMetadata(style: Style, companion = false): string {
+  if(companion)return '<w:hidden/><w:semiHidden/><w:unhideWhenUsed w:val="0"/>';
   return (style.autoUpdate && !companion ? '<w:autoRedefine/>' : '')
     + (style.hidden && !style.unhideWhenUsed ? '<w:hidden/>' : '')
     + val('uiPriority', style.priority)
-    + (style.hidden && style.unhideWhenUsed ? '<w:semiHidden/>' : '')
+    + (style.hidden && style.unhideWhenUsed ? '<w:semiHidden/>' : !style.hidden ? '<w:semiHidden w:val="0"/>' : '')
     + (style.unhideWhenUsed ? '<w:unhideWhenUsed/>' : '')
     + (style.quickFormat && !companion ? '<w:qFormat/>' : '');
 }
@@ -159,10 +160,12 @@ function exportStyleProject(source: Project): Project {
 }
 
 function stylesPart(project: Project, sample = false, locale: Locale = 'zh'): string {
+  const order=new Map(project.styles.map((style,index)=>[style.id,index+1]));
   project=exportStyleProject(project);
   let xml = wrap('docDefaults', wrap('rPrDefault', runProperties({ ...baseRun, shading: undefined }, baseRun, false, true)) + wrap('pPrDefault', paragraphProperties({ ...baseParagraph, shading: undefined })));
-  if (!project.styles.some(s=>s.id==='Normal')) xml += '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:semiHidden/></w:style>';
-  if (sample) xml += `<w:style w:type="paragraph" w:customStyle="1" w:styleId="${sampleTableStyleId(project)}">${val('name', locale === 'en' ? 'Table Sample Text' : '表格示例正文')}<w:semiHidden/></w:style>`;
+  xml += '<w:latentStyles w:defLockedState="0" w:defUIPriority="99" w:defSemiHidden="1" w:defUnhideWhenUsed="0" w:defQFormat="0"/>';
+  if (!project.styles.some(s=>s.id==='Normal')) xml += '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:hidden/><w:semiHidden/><w:unhideWhenUsed w:val="0"/></w:style>';
+  if (sample) xml += `<w:style w:type="paragraph" w:customStyle="1" w:styleId="${sampleTableStyleId(project)}">${val('name', locale === 'en' ? 'Table Sample Text' : '表格示例正文')}<w:hidden/><w:semiHidden/><w:unhideWhenUsed w:val="0"/></w:style>`;
   for (const style of project.styles) {
     const base = project.styles.find(s => s.id === style.basedOn);
     const inherited = base ? resolveStyle(project, base) : { run: baseRun, paragraph: baseParagraph };
@@ -176,7 +179,7 @@ function stylesPart(project: Project, sample = false, locale: Locale = 'zh'): st
     let body = val('name', style.name) + (style.aliases ? val('aliases', style.aliases) : '') + val('basedOn', style.basedOn);
     if (paragraphStyle(style)) body += val('next', style.next);
     if (style.type === 'linked') body += val('link', `${style.id}Char`);
-    body += styleMetadata(style);
+    body += styleMetadata({...style,priority:order.get(style.id)??99});
     if (style.type !== 'character') body += paragraphProperties(style.paragraph, inherited.paragraph, numbering);
     // MS-OI29500 17.7.6(b)：Word 表格样式采用绝对值，段落/字符才反转。
     body += runProperties(style.run, inherited.run, style.type !== 'table');
@@ -199,7 +202,7 @@ function stylesPart(project: Project, sample = false, locale: Locale = 'zh'): st
   }
   project.lists.forEach((list, index) => {
     // ilvl 只表示命名样式的应用层级，不保证所有 Word 版本画廊的缩略图选层。
-    xml += `<w:style w:type="numbering" w:customStyle="1" w:styleId="${escape(list.id)}">${val('name', list.name)}${val('uiPriority', 40)}<w:qFormat/>${wrap('pPr', numPr(index + 1, list.galleryLevel ?? 0))}</w:style>`;
+    xml += `<w:style w:type="numbering" w:customStyle="1" w:styleId="${escape(list.id)}">${val('name', list.name)}<w:hidden/><w:semiHidden/><w:unhideWhenUsed w:val="0"/>${wrap('pPr', numPr(index + 1, list.galleryLevel ?? 0))}</w:style>`;
   });
   return `${XML}<w:styles ${NS}>${xml}</w:styles>`;
 }
@@ -293,7 +296,7 @@ export function buildParts(input: Project, options: ExportOptions = {}): Record<
   parts['word/styles.xml'] = stylesPart(project, options.sample ?? false, locale);
   parts['word/numbering.xml'] = numberingPart(project, pictures);
   parts['word/document.xml'] = documentPart(project, options.sample ?? false, locale);
-  parts['word/settings.xml'] = `${XML}<w:settings ${NS}><w:zoom w:percent="100"/>${val('defaultTabStop', cm(project.page.defaultTab))}${project.page.mirrorMargins?'<w:mirrorMargins/>':''}<w:characterSpacingControl w:val="doNotCompress"/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>`;
+  parts['word/settings.xml'] = `${XML}<w:settings ${NS}><w:zoom w:percent="100"/><w:stylePaneFormatFilter w:allStyles="0" w:customStyles="0" w:latentStyles="0" w:stylesInUse="0" w:headingStyles="0" w:top3HeadingStyles="0" w:visibleStyles="1" w:clearFormatting="0" w:directFormattingOnRuns="0" w:directFormattingOnParagraphs="0" w:directFormattingOnNumbering="0" w:directFormattingOnTables="0"/><w:stylePaneSortMethod w:val="priority"/>${val('defaultTabStop', cm(project.page.defaultTab))}${project.page.mirrorMargins?'<w:mirrorMargins/>':''}<w:characterSpacingControl w:val="doNotCompress"/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>`;
   parts['word/style-studio.json'] = JSON.stringify(project);
   const application = locale === 'en' ? 'Word Style Studio' : 'Word 样式工作室';
   const description = locale === 'en' ? `${options.sample ? 'Review samples' : 'Blank document'} with custom styles and dynamic multilevel lists` : `包含自定义样式与动态多级列表的${options.sample ? '验收样例' : '空白文档'}`;

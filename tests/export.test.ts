@@ -113,9 +113,9 @@ test('quick styles preserve both initial visibility and hidden-until-used intent
   const hidden = project.styles[2]; hidden.unhideWhenUsed = true; hidden.hidden = true;
   const permanent = project.styles[3]; permanent.unhideWhenUsed = false; permanent.hidden = true;
   const styles = xml(buildParts(project), 'word/styles.xml');
-  assert.match(styleXml(styles, visible.id), /<w:uiPriority w:val="7"\/>/);
+  assert.match(styleXml(styles, visible.id), /<w:uiPriority w:val="2"\/>/);
   assert.match(styleXml(styles, visible.id), /<w:qFormat\/>/);
-  assert.doesNotMatch(styleXml(styles, visible.id), /<w:(semiHidden|hidden)\b/);
+  assert.doesNotMatch(styleXml(styles, visible.id), /<w:hidden\b|<w:semiHidden\/>/);
   assert.match(styleXml(styles, hidden.id), /<w:semiHidden\/><w:unhideWhenUsed\/>/);
   assert.match(styleXml(styles, permanent.id), /<w:hidden\/>/);
 });
@@ -318,4 +318,19 @@ test('unit-changing children use isolated export bases without mutating the proj
  assert.doesNotMatch(styleXml(content,base[1]),/<w:ind|<w:spacing/);
  assert.match(child,/w:before="120"/);assert.doesNotMatch(child,/w:beforeLines|w:hanging/);
  assert.equal(JSON.stringify(p),original);
+});
+
+test('recommended styles follow the website order and exclude generated styles and lists',()=>{
+ const project=createProject();project.styles.reverse();project.styles.forEach(s=>s.priority=42);
+ const before=JSON.stringify(project);
+ for(const sample of [false,true]){
+  const parts=buildParts(project,{sample});const styles=xml(parts,'word/styles.xml');const settings=xml(parts,'word/settings.xml');
+  assert.match(settings,/<w:stylePaneSortMethod w:val="priority"\/>/);
+  assert.match(settings,/w:visibleStyles="1"/);assert.match(settings,/w:latentStyles="0"/);
+  assert.match(styles,/<w:latentStyles[^>]*w:defSemiHidden="1"[^>]*w:defUnhideWhenUsed="0"[^>]*w:defQFormat="0"/);
+  project.styles.forEach((s,i)=>assert.ok(styleXml(styles,s.id).includes(`<w:uiPriority w:val="${i+1}"/>`)));
+  for(const list of project.lists){const body=styleXml(styles,list.id);assert.match(body,/<w:hidden\/>/);assert.doesNotMatch(body,/<w:qFormat/);}
+  for(const style of project.styles.filter(s=>s.type==='linked')){const body=styleXml(styles,style.id+'Char');assert.match(body,/<w:hidden\/>/);assert.doesNotMatch(body,/<w:qFormat|<w:unhideWhenUsed\/>/);}
+ }
+ assert.equal(JSON.stringify(project),before);
 });
