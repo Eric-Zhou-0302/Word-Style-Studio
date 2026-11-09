@@ -47,7 +47,12 @@ function runProperties(run: Run, inherited: Run = baseRun, style = false, allowH
   if (allowHighlight) xml += val('highlight', run.highlight);
   if (run.underline !== undefined || run.underlineColor !== undefined) xml += leaf('w:u', { 'w:val': run.underline ?? inherited.underline ?? 'none', 'w:color': hex(run.underlineColor) });
   xml += shade(run.shading) + val('vertAlign', run.script);
-  if (run.language !== undefined) xml += leaf('w:lang', { 'w:val': run.language, 'w:eastAsia': run.language });
+  if (run.language !== undefined) {
+    // Mac Word 会把标为中文/日文的西文按东亚字体排版，甚至忽略手动换西文字体。
+    // val 管西文校对，eastAsia 管中日文；不能把东亚语言同时写进两个槽。
+    const western = run.language === 'en-US' || run.language === 'en-GB';
+    xml += leaf('w:lang', { 'w:val': western ? run.language : 'en-US', 'w:eastAsia': western ? undefined : run.language });
+  }
   for (const key of ['ligatures', 'numForm', 'numSpacing'] as const) if (run[key] !== undefined) xml += leaf(`w14:${key}`, { 'w14:val': run[key] });
   if (run.contextualAlternates !== undefined) xml += leaf('w14:cntxtAlts', { 'w14:val': run.contextualAlternates ? 1 : 0 });
   return wrap('rPr', xml);
