@@ -80,31 +80,26 @@ test('linked styles have reciprocal links and compatible character ancestry', ()
   assert.match(styleXml(styles, 'Heading2Char'), /<w:basedOn w:val="Heading1Char"\/>/);
 });
 
-test('style booleans encode effective overrides using Word toggle semantics', () => {
-  const project = createProject();
-  const parent = { ...createStyle('paragraph', '粗体基准', 'Normal'), id: 'ToggleBase', run: { bold: true, italic: true, caps: true } };
-  const inherit = { ...createStyle('paragraph', '继承', parent.id), id: 'ToggleInherit', run: {} };
-  const off = { ...createStyle('paragraph', '关闭', parent.id), id: 'ToggleOff', run: { bold: false, italic: false, caps: false } };
-  const on = { ...createStyle('paragraph', '明确开启', parent.id), id: 'ToggleOn', run: { bold: true, italic: true, caps: true } };
-  project.styles.push(parent, inherit, off, on);
-  const styles = xml(buildParts(project), 'word/styles.xml');
-  assert.doesNotMatch(styleXml(styles, inherit.id), /<w:(b|i|caps)\b/);
-  for (const property of ['b', 'i', 'caps']) {
-    assert.match(styleXml(styles, parent.id), new RegExp(`<w:${property} w:val="1"/>`));
-    assert.match(styleXml(styles, off.id), new RegExp(`<w:${property} w:val="1"/>`));
-    assert.match(styleXml(styles, on.id), new RegExp(`<w:${property} w:val="0"/>`));
+test('paragraph and character chains preserve explicit on, off and inherited font switches', () => {
+  for (const type of ['paragraph', 'character', 'linked'] as const) {
+    const project = createBlankProject();
+    const base = createStyle(type, '基准');
+    base.run = { bold: true, italic: true, caps: true };
+    const inherit = createStyle(type, '继承', base.id);
+    const off = createStyle(type, '关闭', base.id);
+    off.run = { bold: false, italic: false, caps: false };
+    const on = createStyle(type, '明确开启', base.id);
+    on.run = { ...base.run };
+    project.styles.push(base, inherit, off, on);
+    const styles = xml(buildParts(project), 'word/styles.xml');
+    for (const suffix of type === 'linked' ? ['', 'Char'] : ['']) {
+      assert.doesNotMatch(styleXml(styles, inherit.id + suffix), /<w:(b|i|caps)\b/);
+      for (const tag of ['b', 'i', 'caps']) {
+        assert.ok(styleXml(styles, on.id + suffix).includes(`<w:${tag}/>`));
+        assert.ok(styleXml(styles, off.id + suffix).includes(`<w:${tag} w:val="0"/>`));
+      }
+    }
   }
-  // 真值模拟 Word 样式继承，不能只验证 XML 中存在一个 false。
-  const effective = (id: string, property: string): boolean => {
-    const content = styleXml(styles, id);
-    const base = content.match(/<w:basedOn w:val="([^"]+)"/);
-    const parentValue = base ? effective(base[1], property) : false;
-    const own = content.match(new RegExp(`<w:${property} w:val="([01])"`));
-    return own?.[1] === '1' ? !parentValue : parentValue;
-  };
-  assert.equal(effective(inherit.id, 'b'), true);
-  assert.equal(effective(off.id, 'b'), false);
-  assert.equal(effective(on.id, 'b'), true);
 });
 
 test('quick styles preserve both initial visibility and hidden-until-used intent', () => {
@@ -113,7 +108,7 @@ test('quick styles preserve both initial visibility and hidden-until-used intent
   const hidden = project.styles[2]; hidden.unhideWhenUsed = true; hidden.hidden = true;
   const permanent = project.styles[3]; permanent.unhideWhenUsed = false; permanent.hidden = true;
   const styles = xml(buildParts(project), 'word/styles.xml');
-  assert.match(styleXml(styles, visible.id), /<w:uiPriority w:val="2"\/>/);
+  assert.match(styleXml(styles, visible.id), /<w:uiPriority w:val="7"\/>/);
   assert.match(styleXml(styles, visible.id), /<w:qFormat\/>/);
   assert.doesNotMatch(styleXml(styles, visible.id), /<w:hidden\b|<w:semiHidden\/>/);
   assert.match(styleXml(styles, hidden.id), /<w:semiHidden\/><w:unhideWhenUsed\/>/);
@@ -146,7 +141,8 @@ test('multiple nine-level lists retain independent dynamic definitions and recip
 
 test('advanced font, paragraph, borders and table regions serialize as native properties', () => {
   const project = createProject();
-  const style = project.styles[1];
+  const style = createStyle('paragraph', '格式验收');
+  project.styles.push(style);
   style.run = { font: '宋体 & "文字"', latinFont: 'Arial', size: 10.5, bold: false, italic: true, underline: 'double', underlineColor: '#ff0000', shading: '#eeeeee', ligatures: 'standardContextual', numForm: 'oldStyle', numSpacing: 'tabular', contextualAlternates: true, spacing: -0.5, position: 2, kerning: 12, scale: 90 };
   style.paragraph = { indentUnit: 'char', left: 2, firstLine: -2, before: 1.5, spacingUnit: 'line', lineRule: 'exact', line: 18, keepNext: false, tabs: [{ position: 2.54, alignment: 'decimal', leader: 'dot' }], borders: { bottom: { style: 'double', color: '#123456', width: 1.5, space: 6 } } };
   const table = project.styles.find(s => s.type === 'table')!;
@@ -169,8 +165,8 @@ test('advanced font, paragraph, borders and table regions serialize as native pr
 
 test('first-line indentation does not also emit a hanging value that cancels it', () => {
   const project = createProject();
-  project.styles[1].paragraph = { firstLine: 1, indentUnit: 'cm' };
-  const styles = styleXml(xml(buildParts(project), 'word/styles.xml'), 'Heading1');
+  project.styles[0].paragraph = { firstLine: 1, indentUnit: 'cm' };
+  const styles = styleXml(xml(buildParts(project), 'word/styles.xml'), 'Normal');
   assert.match(styles, /w:firstLine="567"/);
   assert.doesNotMatch(styles, /w:hanging(?:Chars)?="/);
   assert.doesNotMatch(styles, /w:firstLineChars="/);
@@ -215,20 +211,60 @@ test('export validates dangerous or inconsistent input before creating a package
   const project = createProject();
   project.styles[1].basedOn = project.styles[1].id;
   assert.throws(() => exportDocument(project), /循环/);
-  assert.throws(() => buildParts({ ...createProject(), name: '\u0001' } as Project), /无效字符/);
+  for (const name of ['\u0001', '\uFFFE', '\uFFFF', '\uD800', '\uDC00']) {
+    assert.throws(() => exportDocument({ ...createProject(), name }), /无效字符/);
+  }
+  assert.match(xml(buildParts({ ...createProject(), name: '论文 📚' }), 'docProps/core.xml'), /论文 📚/);
 });
 
-test('unbound styles do not inherit numbering from a numbered base', () => {
-  const p=createProject();const s=createStyle('paragraph','无编号标题','Heading1');p.styles.push(s);
-  const styles=String(buildParts(p)['word/styles.xml']);
-  assert.match(styleXml(styles,s.id),/<w:numId w:val="0"\/>/);
+test('unlisted paragraph styles inherit character indentation through basedOn', () => {
+  const project = createProject();
+  const abstract = createStyle('paragraph', '中文摘要内容');
+  abstract.paragraph = { alignment: 'left', indentUnit: 'char', firstLine: 2 };
+  const keywords = createStyle('paragraph', '中文关键词', abstract.id);
+  keywords.run = { bold: true };
+  const child = createStyle('linked', '下一级', keywords.id);
+  project.styles.push(child, keywords, abstract);
+
+  const styles = xml(buildParts(project), 'word/styles.xml');
+  const parentXml = styleXml(styles, abstract.id);
+  assert.match(parentXml, /w:firstLineChars="200"/);
+  assert.doesNotMatch(parentXml, /<w:numPr>/);
+  for (const style of [keywords, child]) {
+    const content = styleXml(styles, style.id);
+    assert.ok(content.includes(`<w:basedOn w:val="${style.basedOn}"/>`));
+    assert.doesNotMatch(content, /<w:(numPr|ind)\b/);
+  }
+  assert.match(styleXml(styles, keywords.id), /<w:b\/>/);
+});
+
+test('cancelling a numbered base preserves paragraph indents and stops at the first unlisted child', () => {
+  for (const unit of ['char', 'cm'] as const) {
+    const project = createProject();
+    const heading = project.styles.find(s => s.id === 'Heading1')!;
+    heading.paragraph = { indentUnit: unit, left: 1, right: 1, firstLine: -2 };
+    const child = createStyle('paragraph', '无编号标题', heading.id);
+    const grandchild = createStyle('paragraph', '无编号正文', child.id);
+    grandchild.paragraph = { left: 0 };
+    project.styles.push(grandchild, child);
+
+    const styles = xml(buildParts(project), 'word/styles.xml');
+    const content = styleXml(styles, child.id);
+    assert.match(content, /<w:numPr><w:numId w:val="0"\/><\/w:numPr>/);
+    assert.match(content, unit === 'char' ? /w:leftChars="100"/ : /w:left="567"/);
+    assert.match(content, unit === 'char' ? /w:hangingChars="200"/ : /w:hanging="1134"/);
+    assert.doesNotMatch(content, /w:right(?:Chars)?=/);
+    const descendant = styleXml(styles, grandchild.id);
+    assert.doesNotMatch(descendant, /<w:numPr>|w:(hanging|firstLine)(?:Chars)?=/);
+    assert.match(descendant, unit === 'char' ? /w:leftChars="0"/ : /w:left="0"/);
+  }
 });
 
 test('table samples avoid Normal overrides and default shading does not obscure cells', () => {
   const p=createProject();const parts=buildParts(p,{sample:true});
   assert.match(String(parts['word/document.xml']),/<w:pStyle w:val="StudioTableSample"\/>/);
   const defaults=String(parts['word/styles.xml']).match(/<w:docDefaults>[\s\S]*?<\/w:docDefaults>/)?.[0]??'';
-  assert.doesNotMatch(defaults,/<w:shd/);
+  assert.doesNotMatch(defaults,/<w:shd|<w:highlight/);
   assert.doesNotMatch(String(buildParts(p)['word/styles.xml']),/StudioTableSample/);
 });
 
@@ -290,37 +326,48 @@ test('export language preserves user names, numbering and truly blank documents'
   assert.doesNotMatch(xml(buildParts(project, {locale: 'en'}), 'word/document.xml'), /<w:t\b/);
 });
 
- test('first-line and hanging indentation emit only the selected direction and unit',()=>{
-  for(const unit of ['char','cm'] as const)for(const amount of [2,-2,0]){
-   const project=createProject();project.styles[1].paragraph={firstLine:amount,indentUnit:unit};
-   const content=styleXml(xml(buildParts(project),'word/styles.xml'),project.styles[1].id);
-   const attrs=Array.from(content.matchAll(/w:(firstLine|hanging)(Chars)?="([^"]*)"/g));
-   assert.equal(attrs.length,1);assert.equal(attrs[0][1],amount<0?'hanging':'firstLine');
-   assert.equal(attrs[0][2]??'',unit==='char'?'Chars':'');
-   assert.equal(Number(attrs[0][3]),unit==='char'?Math.abs(amount)*100:Math.round(Math.abs(amount)*1440/2.54));
+test('single-unit indents serialize one direction and preserve an explicit zero', () => {
+  for (const unit of ['char','cm'] as const) for (const amount of [2,-2,0]) {
+    const project = createBlankProject();
+    project.styles[0].paragraph = { firstLine: amount, indentUnit: unit };
+    const content = styleXml(xml(buildParts(project), 'word/styles.xml'), 'Normal');
+    const attrs = Array.from(content.matchAll(/w:(firstLine|hanging)(Chars)?="([^"]*)"/g));
+    assert.equal(attrs.length, 1);
+    assert.equal(attrs[0][1], amount < 0 ? 'hanging' : 'firstLine');
+    assert.equal(attrs[0][2] ?? '', unit === 'char' ? 'Chars' : '');
+    assert.equal(Number(attrs[0][3]), unit === 'char' ? Math.abs(amount) * 100 : Math.round(Math.abs(amount) * 1440 / 2.54));
   }
- });
-
-test('paragraph distance properties never emit a zero in a competing unit',()=>{
- for(const char of [false,true]){
-  const p=createProject();p.styles[1].paragraph={indentUnit:char?'char':'cm',left:2,right:1,firstLine:2,spacingUnit:char?'line':'pt',before:6,after:6};
-  const content=styleXml(xml(buildParts(p),'word/styles.xml'),p.styles[1].id);
-  assert.doesNotMatch(content,char?/w:(left|right|firstLine|before|after)="/:/w:(leftChars|rightChars|firstLineChars|beforeLines|afterLines)="/);
- }
 });
 
-test('unit-changing children use isolated export bases without mutating the project',()=>{
- const p=createProject();p.styles[0].paragraph={indentUnit:'char',left:2,firstLine:-2,spacingUnit:'line',before:1};
- p.styles[1].basedOn=p.styles[0].id;p.styles[1].paragraph={indentUnit:'cm',firstLine:1,spacingUnit:'pt',before:6};
- const original=JSON.stringify(p);const content=xml(buildParts(p),'word/styles.xml');
- const child=styleXml(content,p.styles[1].id);const base=child.match(/<w:basedOn w:val="([^"]+)"/)!;
- assert.notEqual(base[1],p.styles[0].id);
- assert.doesNotMatch(styleXml(content,base[1]),/<w:ind|<w:spacing/);
- assert.match(child,/w:before="120"/);assert.doesNotMatch(child,/w:beforeLines|w:hanging/);
- assert.equal(JSON.stringify(p),original);
+test('unit changes preserve real ancestry and serialize the Word unit resets without creating style IDs', () => {
+  const p = createBlankProject();
+  const base = { ...createStyle('paragraph', 'Base'), id: 'Char' };
+  base.paragraph = { indentUnit:'char', left:2, firstLine:2, spacingUnit:'line', before:1 };
+  const child = { ...createStyle('paragraph', 'Child', base.id), id:'X' };
+  child.paragraph = { indentUnit:'cm', firstLine:-0.5 };
+  const grand = createStyle('paragraph', 'Grandchild', child.id);
+  grand.paragraph = { spacingUnit:'pt', before:6 };
+  const linked = { ...createStyle('linked', 'Linked'), id:'XExportBase' };
+  p.styles.push(grand, child, base, linked);
+  const original = JSON.stringify(p);
+  const styles = xml(buildParts(p), 'word/styles.xml');
+  const ids = [...styles.matchAll(/w:styleId="([^"]+)"/g)].map(match => match[1]);
+  assert.equal(ids.length, p.styles.length + 1);
+  assert.equal(new Set(ids).size, ids.length);
+  const childXml = styleXml(styles, child.id);
+  assert.ok(childXml.includes(`<w:basedOn w:val="${base.id}"/>`));
+  assert.match(childXml, /w:firstLineChars="0"/);
+  assert.match(childXml, /w:hanging="283"/);
+  assert.match(childXml, /w:leftChars="0"/);
+  const grandXml = styleXml(styles, grand.id);
+  assert.ok(grandXml.includes(`<w:basedOn w:val="${child.id}"/>`));
+  assert.match(grandXml, /w:beforeLines="0"/);
+  assert.match(grandXml, /w:before="120"/);
+  assert.doesNotMatch(grandXml, /<w:ind/);
+  assert.equal(JSON.stringify(p), original);
 });
 
-test('recommended styles follow the website order and exclude only generated helper styles',()=>{
+test('recommended styles keep configured priorities independently of sidebar order',()=>{
  const project=createProject();project.styles.reverse();project.styles.forEach(s=>s.priority=42);
  const before=JSON.stringify(project);
  for(const sample of [false,true]){
@@ -328,7 +375,7 @@ test('recommended styles follow the website order and exclude only generated hel
   assert.match(settings,/<w:stylePaneSortMethod w:val="priority"\/>/);
   assert.match(settings,/w:visibleStyles="1"/);assert.match(settings,/w:latentStyles="0"/);
   assert.match(styles,/<w:latentStyles[^>]*w:defSemiHidden="1"[^>]*w:defUnhideWhenUsed="0"[^>]*w:defQFormat="0"/);
-  project.styles.forEach((s,i)=>assert.ok(styleXml(styles,s.id).includes(`<w:uiPriority w:val="${i+1}"/>`)));
+  project.styles.forEach(s=>assert.ok(styleXml(styles,s.id).includes(`<w:uiPriority w:val="${s.priority}"/>`)));
   for(const list of project.lists){const body=styleXml(styles,list.id);assert.doesNotMatch(body,/<w:hidden|<w:semiHidden\/>/);assert.match(body,/<w:qFormat\/>/);}
   for(const style of project.styles.filter(s=>s.type==='linked')){const body=styleXml(styles,style.id+'Char');assert.match(body,/<w:hidden\/>/);assert.doesNotMatch(body,/<w:qFormat|<w:unhideWhenUsed\/>/);}
  }
@@ -342,8 +389,82 @@ test('recommended styles follow the website order and exclude only generated hel
   const parts=buildParts(p);const styles=xml(parts,'word/styles.xml');
   for(const [i,list] of [multi,bullet,numbered].entries()){
    const content=styleXml(styles,list.id);
-   assert.ok(content.includes(`<w:uiPriority w:val="${p.styles.length+i+1}"/>`));
+   assert.ok(content.includes(`<w:uiPriority w:val="${Math.max(...p.styles.map(style => style.priority)) + i + 1}"/>`));
    assert.ok(content.includes(`<w:numId w:val="${p.lists.indexOf(list)+1}"/>`));
    assert.match(content,/<w:qFormat\/>/);assert.doesNotMatch(content,/<w:hidden\/>|<w:semiHidden\/>/);
   }
  });
+
+test('bound paragraphs take their position from the level and keep independent right indentation', () => {
+  const project = createBlankProject();
+  const base = project.styles[0];
+  base.paragraph = { indentUnit: 'char', left: 3, firstLine: 2 };
+  const bound = createStyle('paragraph', '关联段落', base.id);
+  bound.paragraph = { left: 1, firstLine: 2, right: 0.75 };
+  bound.run = { underline: 'double' };
+  project.styles.push(bound);
+  const list = createList('编号', 'numbered');
+  Object.assign(list.levels[0], { linkedStyle: bound.id, indent: 1.5, hanging: 0.5, run: { underlineColor: '#00aa00' } });
+  project.lists.push(list);
+
+  const parts = buildParts(project);
+  const paragraph = styleXml(xml(parts, 'word/styles.xml'), bound.id);
+  assert.match(paragraph, /<w:ind w:rightChars="75"\/>/);
+  assert.match(paragraph, /<w:numId w:val="1"\/>/);
+  const level = xml(parts, 'word/numbering.xml');
+  assert.ok(level.includes(`<w:pStyle w:val="${bound.id}"/>`));
+  for (const property of ['leftChars="0"', 'firstLineChars="0"', 'left="850"', 'hanging="283"']) assert.ok(level.includes('w:' + property));
+  assert.match(level, /<w:u w:val="double" w:color="00AA00"\/>/);
+});
+
+test('linked character companions inherit linked ancestors and only copy explicit paragraph settings', () => {
+  const project = createBlankProject();
+  const root = createStyle('linked', '链接基准');
+  root.run = { italic: true };
+  const parent = createStyle('paragraph', '中间段落', root.id);
+  parent.run = { color: '#112233' };
+  const child = createStyle('linked', '链接子级', parent.id);
+  child.run = { bold: true };
+  project.styles.push(root, parent, child);
+  const styles = xml(buildParts(project), 'word/styles.xml');
+  const first = styleXml(styles, root.id + 'Char');
+  assert.match(first, /<w:i\/>/);
+  assert.doesNotMatch(first, /<w:(rFonts|sz|color|b)\b/);
+  const companion = styleXml(styles, child.id + 'Char');
+  assert.ok(companion.includes(`<w:basedOn w:val="${root.id}Char"/>`));
+  assert.match(companion, /<w:b\/>/);
+  assert.match(companion, /<w:color w:val="112233"\/>/);
+  assert.doesNotMatch(companion, /<w:(rFonts|sz|i)\b/);
+});
+
+test('conditional table formatting resolves the parent region and samples include both band groups', () => {
+  const project = createBlankProject();
+  const parent = createStyle('table', '父表');
+  parent.table!.colBandSize = 2;
+  parent.table!.regions = {
+    firstRow: { run: { underline: 'double' }, paragraph: { indentUnit: 'char', firstLine: 1, spacingUnit: 'line', before: 1, lineRule: 'exact', line: 18 } },
+    band2Vert: { run: {}, paragraph: {}, shading: '#aaccee' },
+  };
+  const child = createStyle('table', '子表', parent.id);
+  child.table = { ...parent.table!, regions: { firstRow: { run: { underlineColor: '#00aa00' }, paragraph: { firstLine: 2, before: 2, line: 20 } } } };
+  project.styles.push(parent, child);
+  const parts = buildParts(project, { sample: true });
+  const region = styleXml(xml(parts, 'word/styles.xml'), child.id).match(/<w:tblStylePr w:type="firstRow">([\s\S]*?)<\/w:tblStylePr>/)![1];
+  for (const attr of ['w:firstLineChars="200"', 'w:beforeLines="200"', 'w:line="400"', 'w:lineRule="exact"', 'w:val="double" w:color="00AA00"']) assert.ok(region.includes(attr));
+  const tables = [...xml(parts, 'word/document.xml').matchAll(/<w:tbl>([\s\S]*?)<\/w:tbl>/g)];
+  assert.equal(tables.length, 2);
+  for (const [, table] of tables) {
+    assert.equal((table.match(/<w:gridCol\b/g) ?? []).length, 6);
+    for (const [, row] of table.matchAll(/<w:tr>([\s\S]*?)<\/w:tr>/g)) assert.equal((row.match(/<w:tc>/g) ?? []).length, 6);
+  }
+});
+
+test('Word visibility values and mirrored page settings follow the native schema', () => {
+  const project = createProject();
+  project.page.mirrorMargins = true;
+  const parts = buildParts(project, { sample: true });
+  const styles = xml(parts, 'word/styles.xml');
+  assert.doesNotMatch(styles, /<w:(semiHidden|unhideWhenUsed) w:val="[01]"/);
+  assert.match(styles, /<w:semiHidden w:val="off"\/>/);
+  assert.match(xml(parts, 'word/settings.xml'), /<w:mirrorMargins\/>[\s\S]*<w:stylePaneFormatFilter[\s\S]*<w:defaultTabStop/);
+});

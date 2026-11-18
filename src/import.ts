@@ -1,5 +1,5 @@
 import { Inflate, strFromU8 } from 'fflate';
-import { createProject, createStyle, createList, validateProject, canBaseOn, paragraphStyle, numberFormats, regionNames, runSchema, paragraphSchema, borderSchema, tableDefault, type Project, type Style, type Run, type Paragraph, type Border, type Borders, type Table, type Level } from './model';
+import { baseRun, invalidXmlCharacters, createProject, createStyle, createList, validateProject, canBaseOn, paragraphStyle, numberFormats, regionNames, runSchema, paragraphSchema, borderSchema, tableDefault, type Project, type Style, type Run, type Paragraph, type Border, type Borders, type Table, type Level } from './model';
 import type { Locale } from './i18n';
 
 const MAX_INPUT = 10 * 1024 * 1024;
@@ -105,7 +105,21 @@ function val(e: Element | Document | undefined, name: string): string | undefine
 function bool(e: Element | undefined): boolean | undefined { return e ? !['0', 'false', 'off'].includes(attr(e) ?? '') : undefined; }
 function number(v: string | undefined): number | undefined { if (v === undefined || !v.trim()) return; const n = Number(v); return Number.isFinite(n) ? n : undefined; }
 const cm = (twips: number) => Math.round(twips / 1440 * 2.54 * 10000) / 10000;
-const cleanText = (text: string) => text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').slice(0, 255);
+const cleanText = (text: string, limit = 255) => text.slice(0, limit).replace(invalidXmlCharacters, '');
+
+type DistanceAxis = { relative?: number; absolute?: number };
+// Word 可以同时记录字符/行和物理距离。相对值为零时，同轴的物理值才生效。
+function usesRelativeUnit(axes: readonly DistanceAxis[]): boolean | undefined {
+  if (axes.some(a => a.relative !== undefined && a.relative !== 0)) return true;
+  if (axes.some(a => a.absolute !== undefined && a.absolute !== 0)) return false;
+  if (axes.some(a => a.relative !== undefined && a.absolute === undefined)) return true;
+  if (axes.some(a => a.absolute !== undefined)) return false;
+}
+function distanceValue(axis: DistanceAxis, relative?: boolean): number | undefined {
+  if (!relative) return axis.absolute ?? axis.relative;
+  if (!axis.relative && axis.absolute) return undefined;
+  return axis.relative ?? (axis.absolute === 0 ? 0 : undefined);
+}
 
 class WordReader {
   warnings = new Set<string>();
@@ -156,7 +170,7 @@ class WordReader {
     if (raw === 'auto') this.warn('Word 自动颜色以继承值代替，导入后请检查颜色。');
     return result;
   }
-  run(e: Element | undefined, context: string, base: Run = {}, toggle = false): Run {
+  run(e: Element | undefined, context: string, base: Run = {}): Run {
     const r: Run = {};
     if (!e) return r;
     const font = child(e, 'rFonts');
@@ -174,11 +188,11 @@ class WordReader {
     for (const [tag,[field,scale]] of Object.entries(mappings)) { const n = number(val(e,tag)); if (n !== undefined) (r as Record<string, unknown>)[field] = n / scale; }
     if (val(e,'szCs') && val(e,'szCs') !== val(e,'sz')) this.warn(`${context}：复杂文字字号未单独导入。`);
     const toggleFields = { b:'bold', i:'italic', caps:'caps', smallCaps:'smallCaps', outline:'outline', shadow:'shadow', emboss:'emboss', imprint:'imprint', vanish:'hidden' } as const;
-    for (const [tag,key] of Object.entries(toggleFields)) { const v = bool(child(e,tag)); if (v !== undefined) (r as Record<string, unknown>)[key] = toggle ? (v ? !base[key] : (base[key] ?? false)) : v; }
+    for (const [tag,key] of Object.entries(toggleFields)) { const v = bool(child(e,tag)); if (v !== undefined) (r as Record<string, unknown>)[key] = v; }
     for (const [tag,key] of [['noProof','noProof'],['cntxtAlts','contextualAlternates']] as const) { const v = bool(child(e,tag)); if (v !== undefined) r[key] = v; }
     const strike = bool(child(e,'strike')), dstrike = bool(child(e,'dstrike'));
     if (strike !== undefined || dstrike !== undefined) {
-      const single = strike === undefined ? base.strike === 'single' : toggle ? strike !== (base.strike === 'single') : strike;
+      const single = strike === undefined ? base.strike === 'single' : strike;
       const double = dstrike === undefined ? base.strike === 'double' : dstrike;
       r.strike = double ? 'double' : single ? 'single' : 'none';
     }
@@ -213,24 +227,36 @@ class WordReader {
     const jc = val(e,'jc'); if (jc) (p as Record<string,unknown>).alignment = jc === 'start' ? 'left' : jc === 'end' ? 'right' : jc;
     const indent = child(e,'ind');
     if (indent) {
-      const charKeys = ['leftChars','startChars','rightChars','endChars','firstLineChars','hangingChars'];
-      const char = charKeys.some(k => attr(indent,k)!==undefined);
-      p.indentUnit = char ? 'char' : 'cm';
-      const convert = (v: number) => char ? v / 100 : cm(v);
-      const read = (...keys: string[]) => keys.map(k => number(attr(indent,k))).find(v => v !== undefined);
-      const left = read(...(char ? ['startChars','leftChars'] : ['start','left'])), right = read(...(char ? ['endChars','rightChars'] : ['end','right']));
-      const first = read(char ? 'firstLineChars':'firstLine'), hanging = read(char ? 'hangingChars':'hanging');
-      if (left !== undefined) p.left = convert(left); if (right !== undefined) p.right = convert(right);
-      if (hanging !== undefined) p.firstLine = -convert(hanging) || 0; else if (first !== undefined) p.firstLine = convert(first);
-      if (char && ((left === undefined && read('start','left') !== undefined) || (right === undefined && read('end','right') !== undefined) || (first === undefined && hanging === undefined && read('firstLine','hanging') !== undefined))) this.warn(`${context}：混合字符和厘米缩进仅保留字符单位部分。`);
+      const read = (...keys: string[]) => keys.map(key => number(attr(indent, key))).find(v => v !== undefined);
+      const firstLine = (suffix: string) => {
+        const hanging = read('hanging' + suffix);
+        return hanging !== undefined ? -hanging || 0 : read('firstLine' + suffix);
+      };
+      const axes = [
+        { key: 'left', relative: read('startChars','leftChars'), absolute: read('start','left') },
+        { key: 'right', relative: read('endChars','rightChars'), absolute: read('end','right') },
+        { key: 'firstLine', relative: firstLine('Chars'), absolute: firstLine('') },
+      ] as const;
+      const relative = usesRelativeUnit(axes);
+      if (relative !== undefined) p.indentUnit = relative ? 'char' : 'cm';
+      for (const axis of axes) {
+        const v = distanceValue(axis, relative);
+        if (v !== undefined) p[axis.key] = relative ? v / 100 : cm(v);
+        else if (axis.absolute !== undefined) this.warn(`${context}：混合字符和厘米缩进仅保留字符单位部分。`);
+      }
     }
     const spacing = child(e,'spacing');
     if (spacing) {
-      const lines = attr(spacing,'beforeLines') !== undefined || attr(spacing,'afterLines') !== undefined;
-      p.spacingUnit = lines ? 'line' : 'pt';
-      const before = number(attr(spacing,lines?'beforeLines':'before')), after = number(attr(spacing,lines?'afterLines':'after'));
-      if (before !== undefined) p.before = before / (lines?100:20); if (after !== undefined) p.after = after / (lines?100:20);
-      if (lines && ((before === undefined && attr(spacing,'before') !== undefined) || (after === undefined && attr(spacing,'after') !== undefined))) this.warn(`${context}：混合行和磅段间距仅保留行单位部分。`);
+      const axes = (['before','after'] as const).map(key => ({
+        key, relative: number(attr(spacing, key + 'Lines')), absolute: number(attr(spacing, key)),
+      }));
+      const relative = usesRelativeUnit(axes);
+      if (relative !== undefined) p.spacingUnit = relative ? 'line' : 'pt';
+      for (const axis of axes) {
+        const v = distanceValue(axis, relative);
+        if (v !== undefined) p[axis.key] = v / (relative ? 100 : 20);
+        else if (axis.absolute !== undefined) this.warn(`${context}：混合行和磅段间距仅保留行单位部分。`);
+      }
       for (const [key,field] of [['beforeAutospacing','beforeAuto'],['afterAutospacing','afterAuto']] as const) { const v = attr(spacing,key); if (v !== undefined) p[field] = !['0','false','off'].includes(v); }
       const line = number(attr(spacing,'line')); const rule = attr(spacing,'lineRule') ?? 'auto';
       if (line !== undefined) { p.lineRule = rule as Paragraph['lineRule']; p.line = line / (rule==='auto'?240:20); }
@@ -294,7 +320,7 @@ function allocateId(raw: string, used: Set<string>, prefix: string, reserveLinke
 }
 function uniqueName(raw: string, names: Set<string>, fallback: string): string {
   const base = cleanText(raw).replaceAll(',', '，').trim() || fallback; let name = base, n = 2;
-  while (names.has(name)) { const suffix = ` (${n++})`; name = base.slice(0,255-suffix.length)+suffix; }
+  while (names.has(name)) { const suffix = ` (${n++})`; name = cleanText(base,255-suffix.length)+suffix; }
   names.add(name); return name;
 }
 function importedProject(files: Map<string, Uint8Array>, fileName: string, locale: Locale): ImportResult {
@@ -331,8 +357,10 @@ function importedProject(files: Map<string, Uint8Array>, fileName: string, local
   const project = createProject(locale); project.name = cleanText(fileName.replace(/\.(docx|dotx)$/i,'')) || (en ? 'Imported Word Styles' : '导入的 Word 样式'); project.styles = []; project.lists = [];project.page={size:'A4',orientation:'portrait',top:2.54,bottom:2.54,left:2.54,right:2.54,gutter:0,defaultTab:1.27,header:1.27,footer:1.27};
   const defaults = child(stylesRoot,'docDefaults');
   const defaultRun = reader.run(child(child(defaults,'rPrDefault'),'rPr'),'文档默认字体');
+  // 文档默认字体相同的属性由模型默认值提供，避免再次导出时将它们固化到链接字符样式。
+  const defaultRunOverrides = Object.fromEntries(Object.entries(defaultRun).filter(([key, value]) => baseRun[key as keyof Run] !== value));
   const defaultParagraph = reader.paragraph(child(child(defaults,'pPrDefault'),'pPr'),'文档默认段落');
-  const normal = {...createStyle('paragraph',en ? 'Normal' : '正文'),id:'Normal',run:defaultRun,paragraph:defaultParagraph,next:'Normal',priority:0};
+  const normal = {...createStyle('paragraph',en ? 'Normal' : '正文'),id:'Normal',run:defaultRunOverrides,paragraph:defaultParagraph,next:'Normal',priority:0};
   if (!normalRaw) { project.styles.push(normal); names.add(normal.name); reader.warn('源文档没有默认段落样式，已补入正文（Normal）样式。'); }
   const candidates = [...rawStyles.entries()].filter(([id,node]) => !charToParagraph.has(id) && ['paragraph','character','table'].includes(attr(node,'type')??'paragraph'));
   candidates.sort(([a],[b])=>a===normalRaw?-1:b===normalRaw?1:0);
@@ -368,7 +396,7 @@ function importedProject(files: Map<string, Uint8Array>, fileName: string, local
     const nextVisit = new Set(visiting); nextVisit.add(raw);
     const basedOn = val(node,'basedOn'), base = basedOn ? effectiveRaw(basedOn,nextVisit) : {run:{...defaultRun},paragraph:{...defaultParagraph}};
     const context=`样式“${val(node,'name')??raw}”`;
-    const result = {run:{...base.run,...reader.run(child(node,'rPr'),context,base.run,attr(node,'type')!=='table')},paragraph:{...base.paragraph,...reader.paragraph(child(node,'pPr'),context)}};
+    const result = {run:{...base.run,...reader.run(child(node,'rPr'),context,base.run)},paragraph:{...base.paragraph,...reader.paragraph(child(node,'pPr'),context)}};
     runCache.set(raw,result.run); paragraphCache.set(raw,result.paragraph); return result;
   };
   for (const style of project.styles) {
@@ -376,13 +404,13 @@ function importedProject(files: Map<string, Uint8Array>, fileName: string, local
     const raw = attr(node,'styleId')!, rawBase = val(node,'basedOn');
     const base = rawBase ? effectiveRaw(rawBase) : {run:defaultRun,paragraph:defaultParagraph};
     const context=`样式“${style.name}”`;
-    style.run=reader.run(child(node,'rPr'),context,base.run,attr(node,'type')!=='table'); style.paragraph=style.type==='character'?{}:reader.paragraph(child(node,'pPr'),context);
+    style.run=reader.run(child(node,'rPr'),context,base.run); style.paragraph=style.type==='character'?{}:reader.paragraph(child(node,'pPr'),context);
     if (style.id==='Normal') {
-      const effective=effectiveRaw(raw); style.run=effective.run;style.paragraph=effective.paragraph;delete style.basedOn;
+      const effective=effectiveRaw(raw); style.run=rawBase ? effective.run : {...defaultRunOverrides,...style.run};style.paragraph=effective.paragraph;delete style.basedOn;
       if (rawBase) reader.warn('默认段落样式的继承已展开为固定格式，以保证正文样式可独立使用。');
     } else if (!style.basedOn || !canBaseOn(project,style,styleMap.get(style.basedOn)!)) {
       if (rawBase) {const effective=effectiveRaw(raw);style.run=effective.run;if(style.type!=='character')style.paragraph=effective.paragraph;reader.warn(`${context}的继承类型不兼容、存在循环或目标缺失，已展开格式。`);}
-      else if(style.type!=='character') { style.run={...defaultRun,...style.run};style.paragraph={...defaultParagraph,...style.paragraph}; }
+      else if(style.type!=='character') { style.run={...defaultRunOverrides,...style.run};style.paragraph={...defaultParagraph,...style.paragraph}; }
       delete style.basedOn;
     }
     if (style.type==='linked') {
@@ -422,7 +450,7 @@ function importedProject(files: Map<string, Uint8Array>, fileName: string, local
     const left=number(attr(ind,'start')??attr(ind,'left')),hanging=number(attr(ind,'hanging')),firstLine=number(attr(ind,'firstLine'));
     if(left!==undefined&&cm(left)>=0&&cm(left)<=55)result.indent=cm(left);
     if(hanging!==undefined&&cm(hanging)>=-20&&cm(hanging)<=55)result.hanging=cm(hanging);else if(firstLine!==undefined&&-cm(firstLine)>=-20&&-cm(firstLine)<=55)result.hanging=-cm(firstLine);else if(hanging===0)result.hanging=0;
-    if(ind&&['leftChars','startChars','hangingChars','firstLineChars'].some(k=>attr(ind,k)!==undefined))reader.warn(`${context}：列表层级的字符单位缩进未导入，保留厘米缩进。`);
+    if(ind&&['leftChars','startChars','hangingChars','firstLineChars'].some(k=>Number(attr(ind,k) ?? 0)!==0))reader.warn(`${context}：列表层级的字符单位缩进未导入，保留厘米缩进。`);
     const tabs=children(child(props,'tabs'),'tab'),tab=tabs.find(t=>attr(t)==='num')??tabs.find(t=>attr(t)!=='clear');
     const pos=number(attr(tab,'pos'));if(pos!==undefined&&cm(pos)>=0&&cm(pos)<=55)result.tabPosition=cm(pos);else if(left!==undefined)result.tabPosition=result.indent;
     if(tabs.length>1)reader.warn(`${context}：仅保留编号后的一个制表位。`);

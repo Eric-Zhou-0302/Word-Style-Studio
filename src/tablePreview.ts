@@ -1,4 +1,4 @@
-import { mergeParagraph, resolveStyle, styleChain, type Border, type Project, type Style, type Table } from './model';
+import { mergeParagraph, resolveStyle, styleChain, tableRegionFormat, type Border, type Project, type Style, type Table } from './model';
 
 export type TableLook = { firstRow:boolean; lastRow:boolean; firstCol:boolean; lastCol:boolean; horizontal:boolean; vertical:boolean };
 export const defaultTableLook:TableLook={firstRow:true,lastRow:true,firstCol:true,lastCol:true,horizontal:true,vertical:true};
@@ -38,8 +38,7 @@ export function resolveTableCell(project:Project,style:Style,table:Table,row:num
   const borders:CellBorders={top:table.border,bottom:table.border,left:table.border,right:table.border};
   for(const key of tableRegionsAt(table,row,col,rows,cols,look)){
     const region=table.regions[key];if(!region)continue;
-    run={...run,...Object.fromEntries(Object.entries(region.run).filter(([,v])=>v!==undefined))};
-    paragraph=mergeParagraph(paragraph,region.paragraph);
+    ({run,paragraph}=tableRegionFormat({run,paragraph},region));
     paragraphShading=region.paragraph.shading??paragraphShading;
     shading=region.shading??shading;verticalAlign=region.verticalAlign??verticalAlign;
     // 区域外框只落在这组单元格的周边，内部边框落在组内共享边上。

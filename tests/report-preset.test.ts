@@ -110,7 +110,8 @@ test('numbered captions have independent counters and reciprocal OOXML bindings 
   const xml=styles.match(new RegExp(`<w:style[^>]+w:styleId="${id}">([\\s\\S]*?)</w:style>`))![1];
   assert.match(xml,/<w:numPr>/);assert.ok(numbering.includes(`<w:pStyle w:val="${id}"/>`));
   const plain=styles.match(new RegExp(`<w:style[^>]+w:styleId="${kind}Caption">([\\s\\S]*?)</w:style>`))![1];
-  assert.match(plain,/<w:numId w:val="0"\/>/);
+  assert.doesNotMatch(plain,/<w:numPr>/);
+  assert.ok(!numbering.includes(`<w:pStyle w:val="${kind}Caption"/>`));
  }
  const figure=styles.match(/<w:style[^>]+w:styleId="FigureParagraph">([\s\S]*?)<\/w:style>/)![1];
  assert.match(figure,/w:before="120"/);assert.match(figure,/w:after="120"/);
@@ -120,6 +121,6 @@ test('internal Normal and sample helper stay outside recommended styles',()=>{
  const p=createProject();const parts=buildParts(p,{sample:true});const xml=String(parts['word/styles.xml']);
  for(const id of ['Normal','StudioTableSample']){
   const body=xml.match(new RegExp(`<w:style[^>]+w:styleId="${id}">([\\s\\S]*?)</w:style>`))![1];
-  assert.match(body,/<w:hidden\/>/);assert.match(body,/<w:unhideWhenUsed w:val="0"\/>/);assert.doesNotMatch(body,/<w:qFormat/);
+  assert.match(body,/<w:hidden\/>/);assert.match(body,/<w:unhideWhenUsed w:val="off"\/>/);assert.doesNotMatch(body,/<w:qFormat/);
  }
 });

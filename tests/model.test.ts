@@ -247,9 +247,35 @@ test('restart zero continues across ancestors, specified restart only reacts to 
   assert.throws(()=>simulateList(list,[-1]),RangeError);
 });
 
-test('zero starts and first use of a nested level do not accidentally increment unseen ancestors', () => {
+test('a nested first item consumes skipped ancestors including a zero start', () => {
   const list=createList();list.levels[0].start=0;list.levels[1].start=0;
-  assert.deepEqual(simulateList(list,[1,1,0,1]).map(item=>item.label),['0.0','0.1','0','0.0']);
+  assert.deepEqual(simulateList(list,[1,1,0,1]).map(item=>item.label),['0.0','0.1','1','1.0']);
+});
+
+test('returning above a restart level resets descendants and a jump consumes intermediate levels', () => {
+  const list = createList();
+  assert.deepEqual(simulateList(list, [0,1,2,2,0,2,1,2]).map(item => item.label),
+    ['1','1.1','1.1.1','1.1.2','2','2.1.1','2.2','2.2.1']);
+  list.levels[2].restart = 0;
+  assert.deepEqual(simulateList(list, [2,1,2,0,2,1,2]).map(item => item.label),
+    ['1.1.1','1.2','1.2.2','2','2.1.3','2.2','2.2.4']);
+});
+
+test('custom restarts distinguish an implicit parent from its last actual item', () => {
+  const list = createList();
+  list.levels[1].restart = 0;
+  assert.deepEqual(simulateList(list, [2,0,2,1,2]).map(item => item.label), ['1.1.1','2','2.0.1','2.2','2.2.1']);
+  assert.deepEqual(simulateList(list, [0,2,1]).map(item => item.label), ['1','1.0.1','1.1']);
+  list.levels[1].start = 0;
+  list.levels[2].legal = true;
+  for (const [format, missing, first] of [['decimal','-1','0'], ['decimalZero','','00'], ['bullet','',''], ['none','','']] as const) {
+    list.levels[1].format = format;
+    const labels = simulateList(list, [0,2,1,2]).map(item => item.label);
+    assert.equal(labels[1], `1.${missing}.1`);
+    assert.equal(labels[3], `1.${first}.1`);
+  }
+  assert.equal(formatNumber(0, 'chineseCountingThousand'), '〇');
+  for (const format of ['upperRoman','lowerRoman','upperLetter','lowerLetter'] as const) assert.equal(formatNumber(0, format), ' ');
 });
 
 test('single-level lists validate types and simulate continuous items; legacy lists remain valid', () => {

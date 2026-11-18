@@ -2,7 +2,8 @@ import { z } from 'zod';
 import type { Locale } from './i18n';
 
 const num = (min: number, max: number) => z.number().finite().min(min).max(max);
-const text = z.string().max(255).refine(s => !/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(s), '文本包含无效字符');
+export const invalidXmlCharacters = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uD800-\uDFFF\uFFFE\uFFFF]/gu;
+const text = z.string().max(255).refine(s => s.search(invalidXmlCharacters) === -1, '文本包含无效字符');
 const id = z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,79}$/);
 const color = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 export const runSchema = z.object({
@@ -199,6 +200,12 @@ export function resolveTableStyle(project:Project, style:Style):Table|undefined 
     table={...structuredClone(entry.table),regions};
   }
   return table;
+}
+export function tableRegionFormat(whole: ReturnType<typeof resolveStyle>, region?: TableRegion) {
+  return {
+    run: { ...whole.run, ...Object.fromEntries(Object.entries(region?.run ?? {}).filter(([, value]) => value !== undefined)) },
+    paragraph: mergeParagraph(whole.paragraph, region?.paragraph ?? {}),
+  };
 }
 export function resolveStyle(project: Project, style: Style): { run: Required<Run>; paragraph: Required<Paragraph> } {
   const chain=styleChain(project,style);

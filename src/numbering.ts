@@ -4,7 +4,7 @@ const digits = '○一二三四五六七八九';
 const legalDigits = '零壹贰叁肆伍陆柒捌玖';
 
 function roman(value: number): string {
-  if (value < 1) return String(value);
+  if (value === 0) return ' ';
   const pairs: [number, string][] = [[1000,'M'],[900,'CM'],[500,'D'],[400,'CD'],[100,'C'],[90,'XC'],[50,'L'],[40,'XL'],[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']];
   let result = '';
   for (const [unit, symbol] of pairs) {
@@ -31,7 +31,7 @@ function chineseGroup(value: number, legal: boolean): string {
 }
 
 function chineseNumber(value: number, legal: boolean): string {
-  if (!value) return '零';
+  if (!value) return legal ? '零' : '〇';
   // Word 的这两类计数最大为 999999；大写编号的万位采用繁体“萬”。
   if (value > 999999) return '';
   const high = Math.floor(value / 10000), low = value % 10000;
@@ -65,8 +65,8 @@ export function formatNumber(value: number, format: Level['format']): string {
     case 'upperRoman': return roman(value);
     case 'lowerRoman': return roman(value).toLowerCase();
     // Word 使用重复同一个字母的序列：Z、AA、BB；不是电子表格列号。
-    case 'upperLetter': return value ? String.fromCharCode(65 + (value - 1) % 26).repeat(Math.ceil(value / 26)) : '0';
-    case 'lowerLetter': return value ? String.fromCharCode(97 + (value - 1) % 26).repeat(Math.ceil(value / 26)) : '0';
+    case 'upperLetter': return value ? String.fromCharCode(65 + (value - 1) % 26).repeat(Math.ceil(value / 26)) : ' ';
+    case 'lowerLetter': return value ? String.fromCharCode(97 + (value - 1) % 26).repeat(Math.ceil(value / 26)) : ' ';
     case 'chineseCounting':
       if (value < 10) return digits[value];
       if (value < 100) return (value >= 20 ? digits[Math.floor(value / 10)] : '') + '十' + (value % 10 ? digits[value % 10] : '');
@@ -103,22 +103,40 @@ export function levelLabel(list: List, index: number, counters?: number[]): stri
     const target = Number(reference) - 1;
     if (target < 0 || target > index) return '';
     const referenced = list.levels[target];
-    return formatNumber(counters?.[target] ?? referenced.start, level.legal ? 'decimal' : referenced.format);
+    if (referenced.format === 'bullet' || referenced.format === 'none') return '';
+    const format = level.legal && referenced.format !== 'decimalZero' ? 'decimal' : referenced.format;
+    const value = counters?.[target] ?? referenced.start;
+    // 跳过零起点的非重启上级时，Word 引用的是首次编号前的值。
+    if (value === -1) {
+      if (format === 'ordinal') return '-1st';
+      return format === 'decimal' || format === 'ideographTraditional' ? '-1' : '';
+    }
+    return formatNumber(value, format);
   });
 }
 
 export function simulateList(list: List, sequence: number[]): { level: number; label: string; counters: number[] }[] {
   const counters = list.levels.map(level => level.start);
-  const started = list.levels.map(() => false);
+  const next = [...counters];
+  const lastExplicit = counters.map(start => start - 1);
   return sequence.map(index => {
-    const level = listLevel(list, index);
-    counters[index] = started[index] ? counters[index] + 1 : level.start;
-    started[index] = true;
-    // restart 是一基的上级编号；0 表示跨上级持续编号。
+    listLevel(list, index);
+    // 跳到下级会占用上级当前编号，即使没有实际应用该上级的段落。
+    for (let ancestor = 0; ancestor < index; ancestor++) {
+      next[ancestor] = Math.max(next[ancestor], counters[ancestor] + 1);
+    }
+    counters[index] = next[index];
+    lastExplicit[index] = counters[index];
+    next[index]++;
     for (let lower = index + 1; lower < list.levels.length; lower++) {
-      if (list.levels[lower].restart === index + 1) {
-        counters[lower] = list.levels[lower].start;
-        started[lower] = false;
+      const level = list.levels[lower];
+      if (level.restart > index) {
+        next[lower] = level.start;
+        lastExplicit[lower] = level.start - 1;
+        counters[lower] = level.start;
+      } else {
+        // 未触发重启时，下次引用显示最后一个实际条目，已占用的编号仍保留。
+        counters[lower] = lastExplicit[lower];
       }
     }
     return {level:index, label:levelLabel(list,index,counters), counters:[...counters]};

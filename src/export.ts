@@ -1,7 +1,8 @@
 import { strToU8, zipSync } from 'fflate';
-import { baseParagraph, baseRun, listKind, paragraphStyle, regionNames, resolveStyle, validateProject } from './model';
+import { baseParagraph, baseRun, listKind, listKindLabels, mergeParagraph, paragraphStyle, regionNames, resolveStyle, resolveTableStyle, styleChain, tableRegionFormat, validateProject } from './model';
 import type { Border, Borders, Level, Paragraph, Project, Run, Style, Table } from './model';
 import type { Locale } from './i18n';
+import { defaultTableLook, tablePreviewSize } from './tablePreview';
 
 export interface ExportOptions { format?: 'docx' | 'dotx'; sample?: boolean; locale?: Locale }
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -20,22 +21,22 @@ const hex = (value: string | undefined) => value?.slice(1).toUpperCase();
 const wrap = (tag: string, body: string) => body ? `<w:${tag}>${body}</w:${tag}>` : '';
 const shade = (value: string | undefined) => value === undefined ? '' : leaf('w:shd', { 'w:val': 'clear', 'w:color': 'auto', 'w:fill': hex(value) });
 
-/** 样式中的 true 是反转继承值，正文/编号中的 true 则是直接启用。 */
-function runProperties(run: Run, inherited: Run = baseRun, style = false, allowHighlight = false): string {
-  const toggle = (tag: string, value: boolean | undefined, parent: boolean | undefined) => bool(tag, value === undefined ? undefined : style ? value !== !!parent : value);
+// 同类型 basedOn 链内保留显式开关；字符样式叠加到段落文字时，由 Word 应用 toggle 语义。
+function runProperties(run: Run, inherited: Run = baseRun, style = false): string {
+  const toggle = (tag: string, value: boolean | undefined) => style && value === true ? leaf(`w:${tag}`) : bool(tag, value);
   let xml = '';
   if (run.font !== undefined || run.latinFont !== undefined) xml += leaf('w:rFonts', {
     'w:ascii': run.latinFont, 'w:hAnsi': run.latinFont, 'w:eastAsia': run.font, 'w:cs': run.latinFont,
   });
-  xml += toggle('b', run.bold, inherited.bold) + toggle('bCs', run.bold, inherited.bold);
-  xml += toggle('i', run.italic, inherited.italic) + toggle('iCs', run.italic, inherited.italic);
-  xml += toggle('caps', run.caps, inherited.caps) + toggle('smallCaps', run.smallCaps, inherited.smallCaps);
+  xml += toggle('b', run.bold) + toggle('bCs', run.bold);
+  xml += toggle('i', run.italic) + toggle('iCs', run.italic);
+  xml += toggle('caps', run.caps) + toggle('smallCaps', run.smallCaps);
   if (run.strike !== undefined) {
-    xml += toggle('strike', run.strike === 'single', inherited.strike === 'single');
+    xml += toggle('strike', run.strike === 'single');
     xml += bool('dstrike', run.strike === 'double');
   }
-  for (const key of ['outline', 'shadow', 'emboss', 'imprint'] as const) xml += toggle(key, run[key], inherited[key]);
-  xml += bool('noProof', run.noProof) + toggle('vanish', run.hidden, inherited.hidden);
+  for (const key of ['outline', 'shadow', 'emboss', 'imprint'] as const) xml += toggle(key, run[key]);
+  xml += bool('noProof', run.noProof) + toggle('vanish', run.hidden);
   xml += val('color', hex(run.color));
   xml += val('spacing', run.spacing === undefined ? undefined : pt(run.spacing));
   xml += val('w', run.scale === undefined ? undefined : Math.round(run.scale));
@@ -43,8 +44,6 @@ function runProperties(run: Run, inherited: Run = baseRun, style = false, allowH
   xml += val('position', run.position === undefined ? undefined : Math.round(run.position * 2));
   xml += val('sz', run.size === undefined ? undefined : Math.round(run.size * 2));
   xml += val('szCs', run.size === undefined ? undefined : Math.round(run.size * 2));
-  // 高亮仅允许用于正文运行属性；样式及编号的 CT_RPr 不支持该元素。
-  if (allowHighlight) xml += val('highlight', run.highlight);
   if (run.underline !== undefined || run.underlineColor !== undefined) xml += leaf('w:u', { 'w:val': run.underline ?? inherited.underline ?? 'none', 'w:color': hex(run.underlineColor) });
   xml += shade(run.shading) + val('vertAlign', run.script);
   if (run.language !== undefined) {
@@ -67,8 +66,9 @@ function borders(items: Borders | undefined, type: 'pBdr' | 'tblBorders' | 'tcBo
   return wrap(type, keys.map(key => items[key] ? border(key, items[key]!) : '').join(''));
 }
 
-function paragraphProperties(p: Paragraph, inherited: Paragraph = baseParagraph, numbering = '', styleId?: string): string {
-  const effective = { ...inherited, ...p };
+interface ParagraphOptions { numbering?: string; styleId?: string; listIndent?: boolean }
+function paragraphProperties(p: Paragraph, inherited: Paragraph = baseParagraph, { numbering = '', styleId, listIndent }: ParagraphOptions = {}): string {
+  const effective = mergeParagraph(inherited, p);
   let xml = val('pStyle', styleId);
   for (const key of ['keepNext', 'keepLines', 'pageBreakBefore', 'widowControl'] as const) xml += bool(key, p[key]);
   xml += numbering + bool('suppressLineNumbers', p.suppressLineNumbers) + borders(p.borders, 'pBdr') + shade(p.shading);
@@ -76,9 +76,11 @@ function paragraphProperties(p: Paragraph, inherited: Paragraph = baseParagraph,
   for (const key of ['suppressAutoHyphens', 'kinsoku', 'wordWrap', 'overflowPunct', 'autoSpaceDE', 'autoSpaceDN', 'bidi', 'snapToGrid'] as const) xml += bool(key, p[key]);
   const spacing: Record<string, string | number | undefined> = {};
   for (const key of ['before', 'after'] as const) {
-    const amount = p[key] ?? (p.spacingUnit !== undefined ? effective[key] : undefined);
+    const amount = p[key] ?? (effective.spacingUnit !== inherited.spacingUnit ? effective[key] : undefined);
     if (amount !== undefined) {
-      // 只输出有效单位，零值也具有优先级，不能用来删除另一单位。
+      // Word 优先使用非零行数；切回磅时清除继承行数，零行则清除可能继承的磅值。
+      if (effective.spacingUnit === 'pt' && inherited.spacingUnit === 'line') spacing[`w:${key}Lines`] = 0;
+      if (effective.spacingUnit === 'line' && Math.round(amount * 100) === 0) spacing[`w:${key}`] = 0;
       spacing[`w:${key}${effective.spacingUnit === 'line' ? 'Lines' : ''}`] = effective.spacingUnit === 'line' ? Math.round(amount * 100) : pt(amount);
     }
     if (p[`${key}Auto`] !== undefined) spacing[`w:${key}Autospacing`] = p[`${key}Auto`] ? 1 : 0;
@@ -90,8 +92,11 @@ function paragraphProperties(p: Paragraph, inherited: Paragraph = baseParagraph,
   if (Object.keys(spacing).length) xml += leaf('w:spacing', spacing);
   const indent: Record<string, number> = {};
   for (const key of ['left', 'right', 'firstLine'] as const) {
-    const amount = p[key] ?? (p.indentUnit !== undefined ? effective[key] : undefined);
+    if (listIndent && key !== 'right') continue;
+    const amount = p[key] ?? (effective.indentUnit !== inherited.indentUnit ? effective[key] : undefined);
     if (amount === undefined) continue;
+    // 在原 basedOn 链内清除字符缩进，再写入对应的物理距离。首行和悬挂共用一个有符号的值。
+    if (effective.indentUnit === 'cm' && inherited.indentUnit === 'char') indent[`w:${key}Chars`] = 0;
     if (key === 'firstLine') {
       const direction = amount < 0 ? 'hanging' : 'firstLine';
       // 首行与悬挂的互斥规则也适用于字符单位；即使 hangingChars 为 0，也不能与 firstLineChars 一起输出。
@@ -119,98 +124,78 @@ function numPr(numId: number, level?: number): string {
   return wrap('numPr', val('ilvl', level) + val('numId', numId));
 }
 function styleMetadata(style: Style, companion = false): string {
-  if(companion)return '<w:hidden/><w:semiHidden/><w:unhideWhenUsed w:val="0"/>';
-  return (style.autoUpdate && !companion ? '<w:autoRedefine/>' : '')
+  if (companion) return '<w:hidden/><w:semiHidden/><w:unhideWhenUsed w:val="off"/>';
+  return (style.autoUpdate ? '<w:autoRedefine/>' : '')
     + (style.hidden && !style.unhideWhenUsed ? '<w:hidden/>' : '')
     + val('uiPriority', style.priority)
-    + (style.hidden && style.unhideWhenUsed ? '<w:semiHidden/>' : !style.hidden ? '<w:semiHidden w:val="0"/>' : '')
+    + (style.hidden && style.unhideWhenUsed ? '<w:semiHidden/>' : !style.hidden ? '<w:semiHidden w:val="off"/>' : '')
     + (style.unhideWhenUsed ? '<w:unhideWhenUsed/>' : '')
-    + (style.quickFormat && !companion ? '<w:qFormat/>' : '');
+    + (style.quickFormat ? '<w:qFormat/>' : '');
 }
 
 function sampleTableStyleId(project: Project): string {
   const ids = new Set([...project.styles.flatMap(s => [s.id, s.id + 'Char']), ...project.lists.map(l => l.id)]);
   let id = 'StudioTableSample'; while (ids.has(id)) id += '_'; return id;
 }
-const indentKeys = ['left','right','firstLine','indentUnit'] as const;
-const spacingKeys = ['before','after','spacingUnit','beforeAuto','afterAuto'] as const;
-
-// 换单位或缩进方向时，省略 XML 属性不会删除祖先属性。
-// 为该子样式建立隐藏的继承链副本，剥离冲突组，再在子样式写入整组有效值。
-function exportStyleProject(source: Project): Project {
-  const project=structuredClone(source);
-  const used=new Set([...source.styles.map(s=>s.id),...source.lists.map(l=>l.id)]);
-  for(const style of project.styles.slice()){
-    const parent=source.styles.find(s=>s.id===style.basedOn);
-    if(!parent)continue;
-    const inherited=resolveStyle(source,parent).paragraph;
-    const effective=resolveStyle(source,source.styles.find(s=>s.id===style.id)!).paragraph;
-    const ind=effective.indentUnit!==inherited.indentUnit || (effective.firstLine<0)!==(inherited.firstLine<0);
-    const spacing=effective.spacingUnit!==inherited.spacingUnit;
-    if(!ind&&!spacing)continue;
-    const keys=[...(ind?indentKeys:[]),...(spacing?spacingKeys:[])];
-    const copyBase=(original:Style):string=>{
-      let id=style.id+'ExportBase'+original.id;while(used.has(id))id+='_';used.add(id);
-      const copy=structuredClone(original);copy.id=id;copy.name=id;copy.type=original.type==='linked'?'paragraph':original.type;
-      copy.quickFormat=false;copy.hidden=true;copy.unhideWhenUsed=false;copy.next=undefined;
-      for(const key of keys)delete copy.paragraph[key];
-      const ancestor=source.styles.find(s=>s.id===original.basedOn);
-      copy.basedOn=ancestor?copyBase(ancestor):undefined;
-      project.styles.push(copy);return id;
-    };
-    style.basedOn=copyBase(parent);
-    for(const key of keys)Object.assign(style.paragraph,{[key]:effective[key]});
-  }
-  return project;
-}
-
 function stylesPart(project: Project, sample = false, locale: Locale = 'zh'): string {
-  const order=new Map(project.styles.map((style,index)=>[style.id,index+1]));
-  // 仅调整显示优先级；编号 ID 仍按原数组分配，避免破坏绑定。
-  const visibleLists=(['multilevel','bullet','numbered'] as const).flatMap(kind=>project.lists.filter(list=>listKind(list)===kind));
-  visibleLists.forEach((list,index)=>order.set(list.id,project.styles.length+index+1));
-  project=exportStyleProject(project);
-  let xml = wrap('docDefaults', wrap('rPrDefault', runProperties({ ...baseRun, shading: undefined }, baseRun, false, true)) + wrap('pPrDefault', paragraphProperties({ ...baseParagraph, shading: undefined })));
+  const visibleLists = (['multilevel','bullet','numbered'] as const).flatMap(kind => project.lists.filter(list => listKind(list) === kind));
+  const lastStylePriority = Math.max(...project.styles.map(style => style.priority));
+  const listPriority = new Map(visibleLists.map((list, index) => [list.id, lastStylePriority + index + 1]));
+  const numberingByStyle = new Map<string, string>();
+  project.lists.forEach((list, index) => {
+    list.levels.forEach((level, levelIndex) => {
+      if (level.linkedStyle) numberingByStyle.set(level.linkedStyle, numPr(index + 1, levelIndex));
+    });
+  });
+  let xml = wrap('docDefaults', wrap('rPrDefault', runProperties({ ...baseRun, shading: undefined })) + wrap('pPrDefault', paragraphProperties({ ...baseParagraph, shading: undefined })));
   xml += '<w:latentStyles w:defLockedState="0" w:defUIPriority="99" w:defSemiHidden="1" w:defUnhideWhenUsed="0" w:defQFormat="0"/>';
-  if (!project.styles.some(s=>s.id==='Normal')) xml += '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:hidden/><w:semiHidden/><w:unhideWhenUsed w:val="0"/></w:style>';
-  if (sample) xml += `<w:style w:type="paragraph" w:customStyle="1" w:styleId="${sampleTableStyleId(project)}">${val('name', locale === 'en' ? 'Table Sample Text' : '表格示例正文')}<w:hidden/><w:semiHidden/><w:unhideWhenUsed w:val="0"/></w:style>`;
+  if (!project.styles.some(s=>s.id==='Normal')) xml += '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:hidden/><w:semiHidden/><w:unhideWhenUsed w:val="off"/></w:style>';
+  if (sample) xml += `<w:style w:type="paragraph" w:customStyle="1" w:styleId="${sampleTableStyleId(project)}">${val('name', locale === 'en' ? 'Table Sample Text' : '表格示例正文')}<w:hidden/><w:semiHidden/><w:unhideWhenUsed w:val="off"/></w:style>`;
   for (const style of project.styles) {
     const base = project.styles.find(s => s.id === style.basedOn);
     const inherited = base ? resolveStyle(project, base) : { run: baseRun, paragraph: baseParagraph };
     const resolved = resolveStyle(project, style);
-    // 未绑定的子样式必须显式取消编号，否则会继承基准标题的 numPr。
-    let numbering = paragraphStyle(style) ? numPr(0) : '';
-    if (paragraphStyle(style)) project.lists.forEach((list, index) => {
-      const level = list.levels.findIndex(l => l.linkedStyle === style.id);
-      if (level >= 0) numbering = numPr(index + 1, level);
-    });
     let body = val('name', style.name) + (style.aliases ? val('aliases', style.aliases) : '') + val('basedOn', style.basedOn);
     if (paragraphStyle(style)) body += val('next', style.next);
     if (style.type === 'linked') body += val('link', `${style.id}Char`);
-    body += styleMetadata({...style,priority:order.get(style.id)??99});
-    if (style.type !== 'character') body += paragraphProperties(style.paragraph, inherited.paragraph, numbering);
-    // MS-OI29500 17.7.6(b)：Word 表格样式采用绝对值，段落/字符才反转。
+    body += styleMetadata(style);
+    if (style.type !== 'character') {
+      const numbering = numberingByStyle.get(style.id);
+      const cancelNumbering = numbering === undefined && base !== undefined && numberingByStyle.has(base.id);
+      // Word 的 numId=0 也会清除继承的左缩进和首行/悬挂缩进。仅在脱离父样式编号时写入，并补回这两项。
+      const paragraph = cancelNumbering
+        ? { ...style.paragraph, left: resolved.paragraph.left, firstLine: resolved.paragraph.firstLine }
+        : style.paragraph;
+      body += paragraphProperties(paragraph, inherited.paragraph, { numbering: cancelNumbering ? numPr(0) : numbering, listIndent: !!numbering });
+    }
     body += runProperties(style.run, inherited.run, style.type !== 'table');
     if (style.type === 'table' && style.table) {
+      const parentTable = base && resolveTableStyle(project, base);
       body += tableProperties(style.table);
       for (const name of regionNames) {
         const region = style.table.regions[name];
         if (!region) continue;
+        const format = tableRegionFormat(resolved, parentTable?.regions[name]);
         const cell = borders(region.borders, 'tcBorders') + shade(region.shading) + val('vAlign', region.verticalAlign);
-        body += `<w:tblStylePr w:type="${name}">${paragraphProperties(region.paragraph, resolved.paragraph)}${runProperties(region.run, resolved.run)}${wrap('tcPr', cell)}</w:tblStylePr>`;
+        body += `<w:tblStylePr w:type="${name}">${paragraphProperties(region.paragraph, format.paragraph)}${runProperties(region.run, format.run)}${wrap('tcPr', cell)}</w:tblStylePr>`;
       }
     }
     xml += `<w:style${attrs({ 'w:type': style.type === 'linked' ? 'paragraph' : style.type, 'w:customStyle': (style.id === 'Normal'||style.id==='TableNormal'&&style.type==='table') ? 0 : 1, 'w:default': (style.id === 'Normal'||style.id==='TableNormal'&&style.type==='table') ? 1 : undefined, 'w:styleId': style.id })}>${body}</w:style>`;
     if (style.type === 'linked') {
-      const linkedBase = base?.type === 'linked' ? `${base.id}Char` : undefined;
-      // 字符样式不能 basedOn 段落样式，非链接父样式的字体在字符副本中展开。
-      const run = linkedBase ? style.run : resolved.run;
-      xml += `<w:style w:type="character" w:customStyle="1" w:styleId="${escape(style.id)}Char">${val('name', `${style.name}${locale === 'en' ? ' (Character)' : '（字符）'}`)}${val('basedOn', linkedBase)}${val('link', style.id)}${styleMetadata(style, true)}${runProperties(run, linkedBase ? inherited.run : baseRun, true)}</w:style>`;
+      // 字符副本可继承最近的链接祖先，其余段落祖先只贡献显式字体属性。
+      const chain = styleChain(project, style);
+      const ancestor = chain.slice(0, -1).reverse().find(entry => entry.type === 'linked');
+      const linkedBase = ancestor && `${ancestor.id}Char`;
+      const run: Run = {};
+      for (const entry of chain.slice(ancestor ? chain.indexOf(ancestor) + 1 : 0)) {
+        Object.assign(run, Object.fromEntries(Object.entries(entry.run).filter(([, value]) => value !== undefined)));
+      }
+      xml += `<w:style w:type="character" w:customStyle="1" w:styleId="${escape(style.id)}Char">${val('name', `${style.name}${locale === 'en' ? ' (Character)' : '（字符）'}`)}${val('basedOn', linkedBase)}${val('link', style.id)}${styleMetadata(style, true)}${runProperties(run, inherited.run, true)}</w:style>`;
     }
   }
   project.lists.forEach((list, index) => {
     // ilvl 只表示命名样式的应用层级，不保证所有 Word 版本画廊的缩略图选层。
-    xml += `<w:style w:type="numbering" w:customStyle="1" w:styleId="${escape(list.id)}">${val('name', list.name)}${val('uiPriority',order.get(list.id))}<w:semiHidden w:val="0"/><w:unhideWhenUsed w:val="0"/><w:qFormat/>${wrap('pPr', numPr(index + 1, list.galleryLevel ?? 0))}</w:style>`;
+    xml += `<w:style w:type="numbering" w:customStyle="1" w:styleId="${escape(list.id)}">${val('name', list.name)}${val('uiPriority', listPriority.get(list.id))}<w:semiHidden w:val="off"/><w:unhideWhenUsed w:val="off"/><w:qFormat/>${wrap('pPr', numPr(index + 1, list.galleryLevel ?? 0))}</w:style>`;
   });
   return `${XML}<w:styles ${NS}>${xml}</w:styles>`;
 }
@@ -220,15 +205,17 @@ function stableHex(value: string): string {
   for (let i = 0; i < value.length; i++) hash = Math.imul(hash ^ value.charCodeAt(i), 16777619);
   return (hash >>> 0).toString(16).padStart(8, '0').toUpperCase();
 }
-function levelProperties(level: Level, index: number, pictureId?: number): string {
+function levelProperties(project: Project, level: Level, index: number, pictureId?: number): string {
   // 默认“上一层及更高层重启”用省略表达；Word 不接受显式 lvlRestart=8。
   const restart = index > 0 && level.restart === index ? undefined : level.restart;
   let body = val('start', level.start) + val('numFmt', level.picture ? 'bullet' : level.format) + val('lvlRestart', restart)
     + val('pStyle', level.linkedStyle) + bool('isLgl', level.legal) + val('suff', level.follow)
     + val('lvlText', level.picture ? '•' : level.format === 'none' ? '' : level.text) + val('lvlPicBulletId', pictureId) + val('lvlJc', level.alignment);
-  const indent = { 'w:left': cm(level.indent), [level.hanging < 0 ? 'w:firstLine' : 'w:hanging']: cm(Math.abs(level.hanging)) };
+  // 层级拥有编号位置；清除基础段落可能留下的字符缩进，保留可在 Word 中直接编辑的层级位置。
+  const indent = { 'w:leftChars': 0, 'w:firstLineChars': 0, 'w:left': cm(level.indent), [level.hanging < 0 ? 'w:firstLine' : 'w:hanging']: cm(Math.abs(level.hanging)) };
   body += wrap('pPr', (level.follow === 'tab' ? wrap('tabs', leaf('w:tab', { 'w:val': 'num', 'w:pos': cm(level.tabPosition) })) : '') + leaf('w:ind', indent));
-  body += runProperties(level.run);
+  const linked = project.styles.find(style => style.id === level.linkedStyle);
+  body += runProperties(level.run, linked && resolveStyle(project, linked).run);
   return `<w:lvl w:ilvl="${index}">${body}</w:lvl>`;
 }
 
@@ -251,7 +238,7 @@ function numberingPart(project: Project, pictures: Picture[]): string {
   // 图片采用 Word 的传统图片项目符号容器，尺寸单位为磅。
   if (pictures.length) xml = xml.replace('<w:pict>', '<w:pict><v:shapetype id="_x0000_t75" coordsize="21600,21600" o:spt="75" o:preferrelative="t" path="m@4@5l@4@11@9@11@9@5xe" filled="f" stroked="f"><v:stroke joinstyle="miter"/><v:formulas><v:f eqn="if lineDrawn pixelLineWidth 0"/><v:f eqn="sum @0 1 0"/><v:f eqn="sum 0 0 @1"/><v:f eqn="prod @2 1 2"/><v:f eqn="prod @3 21600 pixelWidth"/><v:f eqn="prod @3 21600 pixelHeight"/><v:f eqn="sum @0 0 1"/><v:f eqn="prod @6 1 2"/><v:f eqn="prod @7 21600 pixelWidth"/><v:f eqn="sum @8 21600 0"/><v:f eqn="prod @7 21600 pixelHeight"/><v:f eqn="sum @10 21600 0"/></v:formulas><v:path o:extrusionok="f" gradientshapeok="t" o:connecttype="rect"/><o:lock v:ext="edit" aspectratio="t"/></v:shapetype>');
   project.lists.forEach((list, index) => {
-    xml += `<w:abstractNum w:abstractNumId="${index}">${val('nsid', stableHex(list.id))}${val('multiLevelType', list.levels.length===1?'singleLevel':'multilevel')}${val('tmpl', stableHex(`template:${list.id}`))}${val('name', list.listNumName || list.name)}${val('styleLink', list.id)}${list.levels.map((level, i) => levelProperties(level, i, pictures.find(p => p.level === level)?.id)).join('')}</w:abstractNum>`;
+    xml += `<w:abstractNum w:abstractNumId="${index}">${val('nsid', stableHex(list.id))}${val('multiLevelType', list.levels.length===1?'singleLevel':'multilevel')}${val('tmpl', stableHex(`template:${list.id}`))}${val('name', list.listNumName || list.name)}${val('styleLink', list.id)}${list.levels.map((level, i) => levelProperties(project, level, i, pictures.find(p => p.level === level)?.id)).join('')}</w:abstractNum>`;
   });
   project.lists.forEach((_, index) => { xml += `<w:num w:numId="${index + 1}">${val('abstractNumId', index)}</w:num>`; });
   return `${XML}<w:numbering ${NS} xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">${xml}</w:numbering>`;
@@ -262,20 +249,27 @@ function textRun(text: string, styleId?: string): string {
 }
 function sampleBody(project: Project, locale: Locale): string {
   const en = locale === 'en';
+  const tableTextStyle = sampleTableStyleId(project);
   let body = `<w:p>${textRun(`${project.name} · ${en ? 'Style Review Samples' : '样式验收样例'}`)}</w:p>`;
   for (const style of project.styles) {
-    if (paragraphStyle(style)) body += `<w:p>${paragraphProperties({}, baseParagraph, '', style.id)}${textRun(`${style.name} — ${en ? 'Style preview. The quick brown fox 0123456789.' : '中文样式预览，The quick brown fox 0123456789。'}`)}</w:p>`;
+    if (paragraphStyle(style)) body += `<w:p>${paragraphProperties({}, baseParagraph, { styleId: style.id })}${textRun(`${style.name} — ${en ? 'Style preview. The quick brown fox 0123456789.' : '中文样式预览，The quick brown fox 0123456789。'}`)}</w:p>`;
     if (style.type === 'character' || style.type === 'linked') body += `<w:p>${textRun(`${style.name}${en ? ': ' : '：'}`)}${textRun(en ? 'Character style sample AaBb 123' : '字符样式示例 AaBb 123 中文', style.type === 'linked' ? `${style.id}Char` : style.id)}</w:p>`;
     if (style.type === 'table') {
-      const rows = Array.from({ length: 5 }, (_, row) => `<w:tr>${Array.from({ length: 3 }, (_, col) => `<w:tc><w:tcPr><w:tcW w:w="2400" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:pStyle w:val="${sampleTableStyleId(project)}"/></w:pPr>${textRun(row === 0 ? `${style.name} · ${en ? 'Column' : '栏'} ${col + 1}` : en ? `Row ${row} · Column ${col + 1}` : `第 ${row} 行 · 第 ${col + 1} 列`)}</w:p></w:tc>`).join('')}</w:tr>`).join('');
-      body += `<w:tbl><w:tblPr>${val('tblStyle', style.id)}<w:tblW w:w="0" w:type="auto"/><w:tblLook w:val="01E0" w:firstRow="1" w:lastRow="1" w:firstColumn="1" w:lastColumn="1" w:noHBand="0" w:noVBand="0"/></w:tblPr><w:tblGrid><w:gridCol w:w="2400"/><w:gridCol w:w="2400"/><w:gridCol w:w="2400"/></w:tblGrid>${rows}</w:tbl><w:p/>`;
+      const table = resolveTableStyle(project, style);
+      const { rows: rowCount, cols } = table ? tablePreviewSize(table, defaultTableLook) : { rows: 4, cols: 3 };
+      const width = Math.floor(7200 / cols);
+      const grid = leaf('w:gridCol', { 'w:w': width }).repeat(cols);
+      const rows = Array.from({ length: rowCount }, (_, row) => `<w:tr>${Array.from({ length: cols }, (_, col) => `<w:tc><w:tcPr><w:tcW w:w="${width}" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:pStyle w:val="${tableTextStyle}"/></w:pPr>${textRun(row === 0 ? `${style.name} · ${en ? 'Column' : '栏'} ${col + 1}` : en ? `Row ${row} · Column ${col + 1}` : `第 ${row} 行 · 第 ${col + 1} 列`)}</w:p></w:tc>`).join('')}</w:tr>`).join('');
+      body += `<w:tbl><w:tblPr>${val('tblStyle', style.id)}<w:tblW w:w="0" w:type="auto"/><w:tblLook w:val="01E0" w:firstRow="1" w:lastRow="1" w:firstColumn="1" w:lastColumn="1" w:noHBand="0" w:noVBand="0"/></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${rows}</w:tbl><w:p/>`;
     }
   }
   project.lists.forEach((list, index) => {
-    body += `<w:p>${textRun(en ? `${list.levels.length > 1 ? 'Multilevel list' : list.levels[0].format === 'bullet' ? 'Bulleted list' : 'Numbered list'}: ${list.name}` : `多级列表：${list.name}`)}</w:p>`;
+    const kind = listKind(list);
+    const label = en ? { multilevel: 'Multilevel list', bullet: 'Bulleted list', numbered: 'Numbered list' }[kind] : listKindLabels[kind];
+    body += `<w:p>${textRun(`${label}${en ? ': ' : '：'}${list.name}`)}</w:p>`;
     // 先走完整九级，再回到上级；验收文档中的编号始终由 Word 动态计算。
     (list.levels.length===1?[0,0,0]:[...list.levels.map((_, i) => i), 0, 1, 2, 1]).forEach(level => {
-      body += `<w:p>${paragraphProperties({}, baseParagraph, numPr(index + 1, level), list.levels[level].linkedStyle)}${textRun(en ? `Level ${level + 1} list content` : `第 ${level + 1} 级列表内容`)}</w:p>`;
+      body += `<w:p>${paragraphProperties({}, baseParagraph, { numbering: numPr(index + 1, level), styleId: list.levels[level].linkedStyle })}${textRun(en ? `Level ${level + 1} list content` : `第 ${level + 1} 级列表内容`)}</w:p>`;
     });
   });
   return body;
@@ -304,7 +298,7 @@ export function buildParts(input: Project, options: ExportOptions = {}): Record<
   parts['word/styles.xml'] = stylesPart(project, options.sample ?? false, locale);
   parts['word/numbering.xml'] = numberingPart(project, pictures);
   parts['word/document.xml'] = documentPart(project, options.sample ?? false, locale);
-  parts['word/settings.xml'] = `${XML}<w:settings ${NS}><w:zoom w:percent="100"/><w:stylePaneFormatFilter w:allStyles="0" w:customStyles="0" w:latentStyles="0" w:stylesInUse="0" w:headingStyles="0" w:top3HeadingStyles="0" w:visibleStyles="1" w:clearFormatting="0" w:directFormattingOnRuns="0" w:directFormattingOnParagraphs="0" w:directFormattingOnNumbering="0" w:directFormattingOnTables="0"/><w:stylePaneSortMethod w:val="priority"/>${val('defaultTabStop', cm(project.page.defaultTab))}${project.page.mirrorMargins?'<w:mirrorMargins/>':''}<w:characterSpacingControl w:val="doNotCompress"/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>`;
+  parts['word/settings.xml'] = `${XML}<w:settings ${NS}><w:zoom w:percent="100"/>${project.page.mirrorMargins?'<w:mirrorMargins/>':''}<w:stylePaneFormatFilter w:allStyles="0" w:customStyles="0" w:latentStyles="0" w:stylesInUse="0" w:headingStyles="0" w:top3HeadingStyles="0" w:visibleStyles="1" w:clearFormatting="0" w:directFormattingOnRuns="0" w:directFormattingOnParagraphs="0" w:directFormattingOnNumbering="0" w:directFormattingOnTables="0"/><w:stylePaneSortMethod w:val="priority"/>${val('defaultTabStop', cm(project.page.defaultTab))}<w:characterSpacingControl w:val="doNotCompress"/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>`;
   parts['word/style-studio.json'] = JSON.stringify(project);
   const application = locale === 'en' ? 'Word Style Studio' : 'Word 样式工作室';
   const description = locale === 'en' ? `${options.sample ? 'Review samples' : 'Blank document'} with custom styles and dynamic multilevel lists` : `包含自定义样式与动态多级列表的${options.sample ? '验收样例' : '空白文档'}`;
