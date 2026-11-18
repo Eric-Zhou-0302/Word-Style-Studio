@@ -3,8 +3,8 @@ import { Plus, Trash2 } from 'lucide-react';
 import { baseRun, baseParagraph, borderDefault, fonts, type Run, type Paragraph, type Border, type Borders, type TabStop } from '../model';
 import { ColorInput, Field, NumberInput, Select, Section, TextInput, type Option, Note } from './Fields';
 
-type FormatProps<T>={value:T;resolved?:Required<T>;inheritanceSource?:string;onChange:(v:T)=>void};
-export function RunEditor({value,resolved=baseRun,inheritanceSource,onChange,compact=false,numberingMode}:{compact?:boolean;numberingMode?:{linkedName?:string}}&FormatProps<Run>){
+type FormatProps<T>={sourceFor?:(key:string)=>{inheritanceSource:string;openSource?:(()=>void)};value:T;resolved?:Required<T>;inheritanceSource?:string;onChange:(v:T)=>void};
+export function RunEditor({value,resolved=baseRun,inheritanceSource,sourceFor,onChange,compact=false,numberingMode}:{compact?:boolean;numberingMode?:{linkedName?:string}}&FormatProps<Run>){
  const {ui,fmt,t}=useI18n();
   const r={...resolved,...value};
   function update<K extends keyof Run>(key:K,v:Run[K]){const next={...value};if(v===undefined)delete next[key];else next[key]=v;onChange(next);}
@@ -16,7 +16,7 @@ export function RunEditor({value,resolved=baseRun,inheritanceSource,onChange,com
         {following?<div className="numbering-follow-row"><span>{numberingMode.linkedName?fmt("跟随 · {0}（参考）",referenceValue):ui("随实际段落")}</span><button type="button" className="text-button" aria-label={fmt("{0}单独设置",label)} onClick={()=>update(key,resolved[key])}>{ui("单独设置")}</button></div>:<div className="numbering-override">{child}<button type="button" className="text-button" aria-label={fmt("{0}恢复跟随",label)} onClick={()=>update(key,undefined)}>{ui("恢复跟随")}</button></div>}
       </Field>;
     }
-    return <Field key={key} label={label} hint={hint} inheritanceSource={inheritanceSource} inherited={value[key]===undefined} onReset={value[key]!==undefined?()=>update(key,undefined):undefined}>{child}</Field>;
+    return <Field key={key} label={label} hint={hint} inheritanceSource={inheritanceSource} {...sourceFor?.(key)} inherited={value[key]===undefined} onReset={value[key]!==undefined?()=>update(key,undefined):undefined}>{child}</Field>;
   };
   const number=(key:keyof Run,label:string,min:number,max:number,step=1,unit?:string)=>wrap(key,label,<NumberInput label={label} value={r[key] as number} onChange={v=>update(key,v as never)} min={min} max={max} step={step} unit={unit}/>,undefined,`${resolved[key]}${unit?` ${unit}`:''}`);
   const select=(key:keyof Run,label:string,options:readonly Option[])=>wrap(key,label,<Select label={label} value={String(r[key])} onChange={v=>update(key,v as never)} options={options}/>,undefined,options.find(([v])=>v===String(resolved[key]))?.[1]);
@@ -35,11 +35,11 @@ export function RunEditor({value,resolved=baseRun,inheritanceSource,onChange,com
   <Section title={ui("OpenType 功能")} description={ui("需要所选字体支持；最终效果请在 Word 中检查。")}><div className="field-grid">{select('ligatures',ui("连字"),[['none',ui("无")],['standard',ui("标准")],['contextual',ui("上下文")],['historical',ui("历史")],['discretional',ui("任意")],['standardContextual',ui("标准和上下文")],['standardHistorical',ui("标准和历史")],['contextualHistorical',ui("上下文和历史")],['standardDiscretional',ui("标准和任意")],['contextualDiscretional',ui("上下文和任意")],['historicalDiscretional',ui("历史和任意")],['standardContextualHistorical',ui("标准、上下文和历史")],['standardContextualDiscretional',ui("标准、上下文和任意")],['standardHistoricalDiscretional',ui("标准、历史和任意")],['contextualHistoricalDiscretional',ui("上下文、历史和任意")],['all',ui("全部")]])}{select('numForm',ui("数字形式"),[['default',ui("默认")],['lining',ui("等高")],['oldStyle',ui("旧式")]])}{select('numSpacing',ui("数字间距"),[['default',ui("默认")],['proportional',ui("按比例")],['tabular',ui("等宽")]])}{flag('contextualAlternates',ui("上下文替换"))}</div></Section></>}</>;
 }
 
-export function ParagraphEditor({value,resolved=baseParagraph,inheritanceSource,onChange}:FormatProps<Paragraph>){
+export function ParagraphEditor({value,resolved=baseParagraph,inheritanceSource,sourceFor,onChange}:FormatProps<Paragraph>){
  const {ui,fmt,t}=useI18n();
   const p={...resolved,...value};
   function update<K extends keyof Paragraph>(key:K,v:Paragraph[K]){const next={...value};if(v===undefined)delete next[key];else next[key]=v;onChange(next);}
-  const wrap=(key:keyof Paragraph,label:string,child:React.ReactNode,hint?:string)=><Field key={key} label={label} hint={hint} inheritanceSource={inheritanceSource} inherited={value[key]===undefined} onReset={value[key]!==undefined?()=>update(key,undefined):undefined}>{child}</Field>;
+  const wrap=(key:keyof Paragraph,label:string,child:React.ReactNode,hint?:string)=><Field key={key} label={label} hint={hint} inheritanceSource={inheritanceSource} {...sourceFor?.(key)} inherited={value[key]===undefined} onReset={value[key]!==undefined?()=>update(key,undefined):undefined}>{child}</Field>;
   const number=(key:keyof Paragraph,label:string,min:number,max:number,step=1,unit?:string)=>wrap(key,label,<NumberInput label={label} value={p[key] as number} onChange={v=>update(key,v as never)} min={min} max={max} step={step} unit={unit}/>);
   const select=(key:keyof Paragraph,label:string,options:readonly Option[])=>wrap(key,label,<Select label={label} value={String(p[key])} onChange={v=>update(key,v as never)} options={options}/>);
   const flag=(key:keyof Paragraph,label:string)=>wrap(key,label,<Select label={label} value={String(p[key])} onChange={v=>update(key,(v==='true') as never)} options={[["true",ui("开启")],["false",ui("关闭")]]}/>);

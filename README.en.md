@@ -19,7 +19,7 @@ and make thoughtful formatting the starting point for your next document.
 
 <br />
 
-<img src="public/images/workspace-preview.png" width="960" alt="Word Style Studio workspace with a style library, formatting controls, and live document preview" />
+<img src="public/images/workspace-preview-en.png" width="960" alt="Word Style Studio workspace with a style library, formatting controls, and live document preview" />
 
 <sub>Styles, lists, and preview — together in one workspace.</sub>
 
@@ -45,7 +45,7 @@ The app interface and built-in user guide are currently in Chinese. Chinese labe
 
 ### 01 / Choose a starting point
 
-**Start from an example (从示例开始)** — Use **29 independent styles and 3 list definitions** covering report titles, table-of-contents entries, six heading levels, body text, figure and table captions, and tables. A starting point for adapting an existing formatting scheme.
+**Start from an example (从示例开始)** — Use **31 independent styles and 5 list definitions** covering report titles, table-of-contents entries, six heading levels, body text, figure and table captions, and tables. A starting point for adapting an existing formatting scheme.
 
 **Start blank (从空白开始)** — Begin with only the basic body-text style and build your own configuration.
 

@@ -53,6 +53,7 @@ export default function GuideEnglish() {
  ]}/>
  <p>Replacements and deletions can be undone within the current session’s history, which retains up to 80 edits. Clearing, creating a new project, and deleting an item require confirmation. Opening this guide preserves your editing state; choose “Back to workspace” to continue.</p>
  <p>A project must keep at least one style, so the last style cannot be deleted. If Normal is absent, export adds a default paragraph style.</p>
+ <p>In Font and Paragraph, select “Show local overrides only” to review explicit settings. Select a source style to inspect inherited values or a linked list level to inspect numbering indents. When two tabs edit the same project, choose which version to keep. The other version is available to download in project management.</p>
  <p>If the status says “Recovery needed,” previously saved data could not be read or validated. The app temporarily loads the default example and pauses automatic saving to preserve the original data. Choose “Download recovery file and continue,” then check that the browser saved the file. Automatic saving of the current project resumes afterward. The recovery file preserves raw data; it may need repair before it can be imported again.</p>
  </Section>
  <Section id="styles" title="04 · Create and manage styles">

@@ -37,3 +37,7 @@ jobs:
         run: npm test
       - name: Build production assets
         run: npm run build
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Check workspace in Chromium
+        run: npm run test:browser

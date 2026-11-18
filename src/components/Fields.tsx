@@ -2,14 +2,14 @@ import { useI18n } from '../i18n';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { RotateCcw, ChevronDown } from 'lucide-react';
 
-export function Field({label,children,hint,onReset,inherited=false,inheritanceSource,className=''}:{label:string;children:ReactNode;hint?:string;onReset?:()=>void;inherited?:boolean;inheritanceSource?:string;className?:string}) {
+export function Field({label,children,hint,onReset,openSource,inherited=false,inheritanceSource,className=''}:{label:string;children:ReactNode;hint?:string;onReset?:()=>void;openSource?:()=>void;inherited?:boolean;inheritanceSource?:string;className?:string}) {
  const {ui,fmt}=useI18n();
   const documentDefault=inheritanceSource===ui("文档默认值");
   const resetLabel=fmt("重置{0}为{1}",label,documentDefault?ui("文档默认值"):fmt("继承值{0}",inheritanceSource?`（${inheritanceSource}）`:''));
-  return <div className={`field ${className}`}><div className="field-heading"><span>{label}</span>{onReset?<button className="reset-field" type="button" title={resetLabel} aria-label={resetLabel} onClick={onReset}><RotateCcw size={12}/></button>:inherited?<span className="inherit-label" title={documentDefault?ui("使用文档默认值"):inheritanceSource?fmt("继承自{0}",inheritanceSource):undefined}>{documentDefault?ui("文档默认"):ui("继承")}</span>:null}</div>{children}{hint&&<span className="field-hint">{hint}</span>}</div>;
+  return <div data-inherited={inherited&&!onReset} className={`field ${className}`}><div className="field-heading"><span>{label}</span>{onReset?<button className="reset-field" type="button" title={resetLabel} aria-label={resetLabel} onClick={onReset}><RotateCcw size={12}/></button>:inherited&&openSource?<button className="inherit-label" onClick={openSource} title={fmt("继承自{0}",inheritanceSource)}>{inheritanceSource}</button>:inherited?<span className="inherit-label" title={documentDefault?ui("使用文档默认值"):inheritanceSource?fmt("继承自{0}",inheritanceSource):undefined}>{documentDefault?ui("文档默认"):ui("继承")}</span>:null}</div>{children}{hint&&<span className="field-hint">{hint}</span>}</div>;
 }
-export function TextInput({label,value,onChange,placeholder,list,maxLength=255}:{label:string;value:string;onChange:(v:string)=>void;placeholder?:string;list?:string;maxLength?:number}) {
-  return <input aria-label={label} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} list={list} maxLength={maxLength}/>;
+export function TextInput({label,value,onChange,placeholder,list,autoFocus,maxLength=255}:{label:string;value:string;onChange:(v:string)=>void;placeholder?:string;list?:string;autoFocus?:boolean;maxLength?:number}) {
+  return <input autoFocus={autoFocus} aria-label={label} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} list={list} maxLength={maxLength}/>;
 }
 export function NumberInput({label,value,onChange,min=-100,max=2000,step=1,unit}:{label:string;value:number;onChange:(v:number)=>void;min?:number;max?:number;step?:number;unit?:string}){
   const [draft,setDraft]=useState(String(value));useEffect(()=>setDraft(String(value)),[value]);
